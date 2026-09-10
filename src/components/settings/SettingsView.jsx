@@ -1,5 +1,6 @@
 import React from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
+import FontSelect from './FontSelect.jsx';
 
 const THEME_OPTIONS = [
   { value: 'dark', label: 'Dark', hint: 'Production Deck' },
@@ -7,7 +8,7 @@ const THEME_OPTIONS = [
 ];
 
 export default function SettingsView() {
-  const { theme, setTheme } = useProject();
+  const { theme, setTheme, fontId, setFontId } = useProject();
 
   return (
     <div className="settings-view">
@@ -32,6 +33,12 @@ export default function SettingsView() {
                 <span className="theme-toggle-hint">{opt.hint}</span>
               </button>
             ))}
+          </div>
+
+          <div className="settings-field">
+            <label className="settings-field-label">Font</label>
+            <FontSelect value={fontId} onChange={setFontId} />
+            <div className="settings-field-hint">Applies everywhere — script pages included, not just the UI.</div>
           </div>
         </div>
       </div>

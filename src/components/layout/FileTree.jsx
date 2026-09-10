@@ -1,28 +1,6 @@
 import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
-import { TRASH_FILES } from '../../state/sampleData.js';
 import { titleFromMarkdown } from '../../utils/markdown.js';
-
-function Folder({ label, files, defaultOpen }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <>
-      <button className="folder" onClick={() => setOpen((o) => !o)}>
-        <span className="folder-icon">{open ? '▾' : '▸'}</span>
-        {label}
-      </button>
-      {open && (
-        <div className="folder-children">
-          {files.map((file) => (
-            <button key={file} className="file" disabled>
-              {file}
-            </button>
-          ))}
-        </div>
-      )}
-    </>
-  );
-}
 
 function DocFolder({ label, docs, docType, activeDocId, defaultOpen, onAdd, onFileClick, onFileContextMenu }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -117,7 +95,6 @@ export default function FileTree() {
         onFileClick={handleFileClick}
         onFileContextMenu={handleFileContextMenu}
       />
-      <Folder label="Trash" files={TRASH_FILES} defaultOpen={false} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES } from './sampleData.js';
 import { characterTemplate, noteTemplate } from './docTemplates.js';
+import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
 import { appendEmptyScene, emptyDoc, removeScene } from '../editor/docJson.js';
@@ -60,6 +61,7 @@ export function ProjectProvider({ children }) {
     typeof persisted?.sidebarCollapsed === 'boolean' ? persisted.sidebarCollapsed : false
   );
   const [theme, setTheme] = useState(() => (persisted?.theme === 'light' ? 'light' : 'dark'));
+  const [fontId, setFontId] = useState(() => (FONT_BY_ID[persisted?.fontId] ? persisted.fontId : DEFAULT_FONT_ID));
   const [projects, setProjects] = useState(() => buildInitialProjects(persisted));
   const [currentProjectId, setCurrentProjectId] = useState(() => {
     if (persisted?.currentProjectId && projects[persisted.currentProjectId]) {
@@ -75,6 +77,8 @@ export function ProjectProvider({ children }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { actId, cardId, title, x, y }
   const [fileMenu, setFileMenu] = useState(null); // { docType, docId, title, x, y }
   const [fileDeleteConfirm, setFileDeleteConfirm] = useState(null); // { docType, docId, title, x, y }
+  const [projectMenu, setProjectMenu] = useState(null); // { projectId, name, x, y }
+  const [projectDeleteConfirm, setProjectDeleteConfirm] = useState(null); // { projectId, name, x, y }
   const [toast, setToast] = useState(null); // { message, key }
 
   const project = projects[currentProjectId];
@@ -85,21 +89,29 @@ export function ProjectProvider({ children }) {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  // Persist whenever any project, the active project, sidebar, or theme
-  // state changes (autosave).
+  // Same idea for the selected font, but as a plain CSS custom property
+  // (--font-family) rather than a [data-font] attribute + hardcoded CSS
+  // blocks per option, since the value is a full font-family stack, not a
+  // fixed enum of visual variants like the theme is.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-family', fontStack(fontId));
+  }, [fontId]);
+
+  // Persist whenever any project, the active project, sidebar, theme, or
+  // font state changes (autosave).
   useEffect(() => {
     const savedAt = Date.now();
     setLastSavedAt(savedAt);
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ projects, currentProjectId, sidebarCollapsed, theme, lastSavedAt: savedAt })
+        JSON.stringify({ projects, currentProjectId, sidebarCollapsed, theme, fontId, lastSavedAt: savedAt })
       );
     } catch {
       // localStorage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -139,6 +151,61 @@ export function ProjectProvider({ children }) {
     setCurrentProjectId(p.id);
     setView({ name: 'outline', payload: null });
   }, []);
+
+  const renameProject = useCallback((projectId, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setProjects((prev) =>
+      prev[projectId] ? { ...prev, [projectId]: { ...prev[projectId], name: trimmed } } : prev
+    );
+  }, []);
+
+  const openProjectMenu = useCallback((projectId, name, x, y) => {
+    setProjectMenu({ projectId, name, x, y });
+  }, []);
+
+  const closeProjectMenu = useCallback(() => setProjectMenu(null), []);
+
+  const deleteProject = useCallback(
+    (projectId) => {
+      setProjects((prev) => {
+        const { [projectId]: _removed, ...rest } = prev;
+        return rest;
+      });
+      setCurrentProjectId((current) => {
+        if (current !== projectId) return current;
+        // The active project was deleted -- fall back to whatever's left.
+        const remainingIds = Object.keys(projects).filter((id) => id !== projectId);
+        return remainingIds[0];
+      });
+      setView({ name: 'outline', payload: null });
+    },
+    [projects]
+  );
+
+  // A project is a real workspace (its own acts, screenplay, docs) with no
+  // undo -- always confirm first, and never let the last one be deleted
+  // (there'd be nothing left to switch to).
+  const requestDeleteProject = useCallback(
+    (projectId, name, x, y) => {
+      setProjectMenu(null);
+      if (Object.keys(projects).length <= 1) {
+        showToast('Can’t delete your only project');
+        return;
+      }
+      setProjectDeleteConfirm({ projectId, name, x, y });
+    },
+    [projects, showToast]
+  );
+
+  const cancelDeleteProject = useCallback(() => setProjectDeleteConfirm(null), []);
+
+  const confirmDeleteProject = useCallback(() => {
+    setProjectDeleteConfirm((current) => {
+      if (current) deleteProject(current.projectId);
+      return null;
+    });
+  }, [deleteProject]);
 
   const addAct = useCallback(() => {
     updateCurrentProject((p) => ({
@@ -373,11 +440,21 @@ export function ProjectProvider({ children }) {
       toggleSidebar,
       theme,
       setTheme,
+      fontId,
+      setFontId,
       project,
       projects,
       currentProjectId,
       switchProject,
       createProject,
+      renameProject,
+      projectMenu,
+      openProjectMenu,
+      closeProjectMenu,
+      projectDeleteConfirm,
+      requestDeleteProject,
+      cancelDeleteProject,
+      confirmDeleteProject,
       lastSavedAt,
       view,
       navigate,
@@ -417,11 +494,20 @@ export function ProjectProvider({ children }) {
       sidebarCollapsed,
       toggleSidebar,
       theme,
+      fontId,
       project,
       projects,
       currentProjectId,
       switchProject,
       createProject,
+      renameProject,
+      projectMenu,
+      openProjectMenu,
+      closeProjectMenu,
+      projectDeleteConfirm,
+      requestDeleteProject,
+      cancelDeleteProject,
+      confirmDeleteProject,
       lastSavedAt,
       view,
       navigate,

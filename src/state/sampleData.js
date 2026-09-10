@@ -226,5 +226,3 @@ export const SEED_PROJECT_NAMES = [
   'Old Pilot Draft',
   'Archive — 2024 Draft',
 ];
-
-export const TRASH_FILES = ['Draft 1 — Original', 'Draft 2 — Notes pass'];

@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
+import ProjectContextMenu from './ProjectContextMenu.jsx';
+import ProjectDeleteConfirmPopover from './ProjectDeleteConfirmPopover.jsx';
 
 export default function ProjectSwitcher() {
-  const { projects, currentProjectId, switchProject, createProject } = useProject();
+  const { projects, currentProjectId, switchProject, createProject, renameProject, openProjectMenu } =
+    useProject();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const projectList = Object.values(projects).sort((a, b) => a.name.localeCompare(b.name));
   const filtered = query.trim()
@@ -29,6 +34,17 @@ export default function ProjectSwitcher() {
     setQuery('');
   }
 
+  function startRename(id, name) {
+    setRenamingId(id);
+    setRenameValue(name);
+  }
+
+  function handleRenameSubmit(e) {
+    e.preventDefault();
+    renameProject(renamingId, renameValue);
+    setRenamingId(null);
+  }
+
   const currentName = projects[currentProjectId]?.name ?? 'Untitled';
 
   return (
@@ -46,15 +62,39 @@ export default function ProjectSwitcher() {
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="project-list">
-          {filtered.map((p) => (
-            <button
-              key={p.id}
-              className={`project-item${p.id === currentProjectId ? ' active' : ''}`}
-              onClick={() => handleSelect(p.id)}
-            >
-              {p.name}
-            </button>
-          ))}
+          {filtered.map((p) =>
+            renamingId === p.id ? (
+              <form key={p.id} onSubmit={handleRenameSubmit}>
+                <input
+                  className="project-item-rename-input"
+                  type="text"
+                  autoFocus
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  onBlur={() => {
+                    if (renameValue.trim()) renameProject(p.id, renameValue);
+                    setRenamingId(null);
+                  }}
+                />
+              </form>
+            ) : (
+              <button
+                key={p.id}
+                className={`project-item${p.id === currentProjectId ? ' active' : ''}`}
+                onClick={() => handleSelect(p.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  openProjectMenu(p.id, p.name, e.clientX, e.clientY);
+                }}
+              >
+                {p.name}
+              </button>
+            )
+          )}
           {filtered.length === 0 && <div className="project-empty">No projects match.</div>}
         </div>
         <div className="project-new">
@@ -85,6 +125,8 @@ export default function ProjectSwitcher() {
           )}
         </div>
       </div>
+      <ProjectContextMenu onRename={startRename} />
+      <ProjectDeleteConfirmPopover />
     </div>
   );
 }

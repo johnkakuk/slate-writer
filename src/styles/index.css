@@ -1,6 +1,15 @@
 /* ---------------- Reset & theme tokens ---------------- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Selected app-wide font (Settings -> Appearance). Independent of light/dark
+   theme, so it lives in its own unconditional :root rule rather than the
+   theme blocks below — see ProjectContext's `font` state, which sets this
+   custom property directly rather than swapping a [data-font] attribute,
+   since the value is a full font-family stack, not a fixed set of variants. */
+:root {
+  --font-family: 'Courier New', Courier, monospace;
+}
+
 /* Dark "Production Deck" theme — the default. Applies on bare :root and is
    also repeated explicitly under [data-theme="dark"] so the Settings toggle
    can force it even if a future OS-level dark-mode media query is added. */
@@ -79,12 +88,12 @@ html, body, #root {
 html, body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--font-family);
   overflow: hidden;
 }
 
 button, input, [contenteditable] {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--font-family);
 }
 
 button {
@@ -202,6 +211,11 @@ button {
   background: var(--bg-dark); border: none; color: var(--text); outline: none;
 }
 .project-new-input::placeholder { color: var(--text-dim); }
+.project-item-rename-input {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 11.5px;
+  background: var(--accent-hover-bg); border: none; border-bottom: 1px solid var(--border-alt2);
+  color: var(--text); outline: none;
+}
 
 /* ---------------- File tree ---------------- */
 .files { padding: 12px 8px; flex: 1; min-height: 0; overflow-y: auto; }
@@ -266,7 +280,7 @@ button {
 .board { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .board-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 16px 12px;
+  padding: 16px 16px 40px;
 }
 .board-title { font-size: 13px; font-weight: 700; color: var(--text); }
 .board-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
@@ -349,7 +363,7 @@ button {
 
 /* ---------------- Screenplay (read-only) ---------------- */
 .screenplay { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.screenplay-head { padding: 16px 16px 12px; }
+.screenplay-head { padding: 16px 16px 40px; }
 .screenplay-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 40px; }
 .screenplay-page {
   max-width: 560px; margin: 0 auto;
@@ -363,7 +377,7 @@ button {
 .sp-block {
   cursor: pointer; border-radius: 3px; padding: 1px 4px; margin: 0 -4px;
   transition: background 0.1s ease; background: none; border: none; display: block; width: 100%; text-align: left;
-  font-family: 'Courier New', Courier, monospace; font-size: 12.5px; line-height: 1.75; color: inherit;
+  font-family: var(--font-family); font-size: 12.5px; line-height: 1.75; color: inherit;
 }
 .sp-block:hover { background: var(--accent-hover-bg); }
 .sp-scene { font-weight: 700; margin: 16px 0 10px; }
@@ -481,15 +495,59 @@ button {
 
 /* ---------------- Markdown docs (Character Bible / Notes & Research) ---------------- */
 .markdown-editor-shell { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.markdown-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 40px; }
-.markdown-editor {
-  display: block; width: 100%; max-width: 720px; margin: 0 auto;
-  min-height: calc(100% - 1px);
-  background: none; border: none; outline: none; resize: none;
-  color: var(--text); font-family: 'Courier New', Courier, monospace;
+.markdown-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 60px; }
+
+.markdown-rich-editor {
+  width: 100%; max-width: 720px; margin: 0 auto;
+  color: var(--text); font-family: var(--font-family);
   font-size: 13px; line-height: 1.7;
 }
-.markdown-editor::placeholder { color: var(--text-dim); }
+.markdown-rich-editor .ProseMirror { outline: none; min-height: calc(100vh - 220px); }
+
+.markdown-rich-editor p { margin: 0 0 14px; }
+.markdown-rich-editor h1, .markdown-rich-editor h2, .markdown-rich-editor h3,
+.markdown-rich-editor h4, .markdown-rich-editor h5, .markdown-rich-editor h6 {
+  font-weight: 700; color: var(--text-bright); line-height: 1.3;
+  margin: 28px 0 12px;
+}
+.markdown-rich-editor h1:first-child, .markdown-rich-editor h2:first-child,
+.markdown-rich-editor h3:first-child { margin-top: 0; }
+.markdown-rich-editor h1 { font-size: 26px; padding-bottom: 8px; border-bottom: 1px solid var(--border-alt); }
+.markdown-rich-editor h2 { font-size: 21px; padding-bottom: 6px; border-bottom: 1px solid var(--border-alt2); }
+.markdown-rich-editor h3 { font-size: 17px; }
+.markdown-rich-editor h4 { font-size: 15px; color: var(--text); }
+.markdown-rich-editor h5 { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+.markdown-rich-editor h6 { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.markdown-rich-editor ul, .markdown-rich-editor ol {
+  margin: 0 0 14px; padding-left: 28px;
+}
+.markdown-rich-editor ul { list-style: disc; }
+.markdown-rich-editor ul ul { list-style: circle; }
+.markdown-rich-editor ul ul ul { list-style: square; }
+.markdown-rich-editor ol { list-style: decimal; }
+.markdown-rich-editor li { margin-bottom: 6px; }
+.markdown-rich-editor li > ul, .markdown-rich-editor li > ol { margin-top: 6px; margin-bottom: 0; }
+.markdown-rich-editor li::marker { color: var(--accent); }
+
+.markdown-rich-editor blockquote {
+  margin: 0 0 14px; padding: 2px 16px;
+  border-left: 3px solid var(--accent); color: var(--text-secondary); font-style: italic;
+}
+.markdown-rich-editor hr { border: none; border-top: 1px solid var(--border-alt); margin: 24px 0; }
+.markdown-rich-editor strong { font-weight: 700; color: var(--text-bright); }
+.markdown-rich-editor em { font-style: italic; }
+.markdown-rich-editor code {
+  font-family: var(--font-family); font-size: 0.92em;
+  background: var(--surface); border: 1px solid var(--border-alt); border-radius: 3px; padding: 1px 5px;
+}
+.markdown-rich-editor pre {
+  margin: 0 0 14px; padding: 12px 14px; overflow-x: auto;
+  background: var(--surface); border: 1px solid var(--border-alt); border-radius: 6px;
+}
+.markdown-rich-editor pre code { background: none; border: none; padding: 0; }
+.markdown-rich-editor a { color: var(--accent); text-decoration: underline; }
+.markdown-rich-editor .ProseMirror-gapcursor:after { border-top-color: var(--text); }
 
 /* ---------------- Settings ---------------- */
 .settings-view { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
@@ -512,6 +570,41 @@ button {
 .theme-toggle-label { font-size: 12px; font-weight: 700; color: var(--text); }
 .theme-toggle-btn.active .theme-toggle-label { color: var(--accent); }
 .theme-toggle-hint { font-size: 10px; color: var(--text-dim); }
+
+.settings-field { margin-top: 16px; }
+.settings-field-label {
+  display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;
+}
+.settings-field-hint { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
+
+.font-select { position: relative; max-width: 280px; }
+.font-select-trigger {
+  width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px;
+  background: var(--surface-alt); border: 1px solid var(--border-alt); border-radius: 8px;
+  color: var(--text); font-size: 13px;
+}
+.font-select-trigger:hover { border-color: var(--text-dim); }
+.font-select.open .project-chevron { transform: rotate(180deg); }
+.font-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50;
+  max-height: 320px; overflow-y: auto;
+  background: var(--surface-dropdown); border: 1px solid var(--border-alt); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+.font-dropdown-group { padding: 4px 0; }
+.font-dropdown-group + .font-dropdown-group { border-top: 1px solid var(--border-alt2); }
+.font-dropdown-label {
+  font-size: 9.5px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 6px 10px 4px;
+}
+.font-option {
+  width: 100%; text-align: left; padding: 7px 10px; border-radius: 5px;
+  background: none; border: none; color: var(--text); font-size: 14px;
+}
+.font-option:hover { background: var(--accent-hover-bg); }
+.font-option.active { color: var(--accent); background: var(--accent-bg); }
 
 /* ---------------- Placeholder / stub views ---------------- */
 .placeholder-view {
