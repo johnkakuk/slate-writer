@@ -8,7 +8,7 @@ const THEME_OPTIONS = [
 ];
 
 export default function SettingsView() {
-  const { theme, setTheme, fontId, setFontId } = useProject();
+  const { theme, setTheme, fontId, setFontId, scriptFontId, setScriptFontId } = useProject();
 
   return (
     <div className="settings-view">
@@ -35,10 +35,18 @@ export default function SettingsView() {
             ))}
           </div>
 
-          <div className="settings-field">
-            <label className="settings-field-label">Font</label>
-            <FontSelect value={fontId} onChange={setFontId} />
-            <div className="settings-field-hint">Applies everywhere — script pages included, not just the UI.</div>
+          <div className="settings-subsection-label">Font</div>
+          <div className="settings-font-grid">
+            <div className="settings-field">
+              <label className="settings-field-label">UI</label>
+              <FontSelect value={fontId} onChange={setFontId} />
+              <div className="settings-field-hint">The app itself — sidebar, cards, everything but the script.</div>
+            </div>
+            <div className="settings-field">
+              <label className="settings-field-label">Editor</label>
+              <FontSelect value={scriptFontId} onChange={setScriptFontId} />
+              <div className="settings-field-hint">The script itself — the Editor and the Screenplay view.</div>
+            </div>
           </div>
         </div>
       </div>

@@ -8,6 +8,10 @@
    since the value is a full font-family stack, not a fixed set of variants. */
 :root {
   --font-family: 'Courier New', Courier, monospace;
+  /* The script itself (Screenplay view + the Editor -- both render the
+     same .screenplay-page container) can be set independently of the rest
+     of the UI, see the second font picker in Settings. */
+  --script-font-family: 'Courier New', Courier, monospace;
 }
 
 /* Dark "Production Deck" theme — the default. Applies on bare :root and is
@@ -372,12 +376,12 @@ button {
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25);
   padding: 40px 44px 60px;
-  font-size: 12.5px; line-height: 1.75;
+  font-family: var(--script-font-family); font-size: 12.5px; line-height: 1.75;
 }
 .sp-block {
   cursor: pointer; border-radius: 3px; padding: 1px 4px; margin: 0 -4px;
   transition: background 0.1s ease; background: none; border: none; display: block; width: 100%; text-align: left;
-  font-family: var(--font-family); font-size: 12.5px; line-height: 1.75; color: inherit;
+  font-family: var(--script-font-family); font-size: 12.5px; line-height: 1.75; color: inherit;
 }
 .sp-block:hover { background: var(--accent-hover-bg); }
 .sp-scene { font-weight: 700; margin: 16px 0 10px; }
@@ -395,7 +399,15 @@ button {
    .screenplay-page centers itself with margin:auto regardless. */
 .editor-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 40px; }
 .editor-page { cursor: text; }
-.editor-page .ProseMirror { outline: none; }
+/* The global `[contenteditable] { font-family: var(--font-family) }` rule
+   (for card titles, column titles, etc.) directly matches ProseMirror's own
+   contenteditable root div with equal specificity, and a direct match wins
+   over an inherited value regardless of source order -- so without this,
+   the script font never reaches .sp-scene/.sp-action/etc in the Editor,
+   only in the read-only Screenplay view (where .sp-block's own explicit
+   rule, a class selector, already outranks the plain `button` element
+   selector). Higher specificity here restores it for the Editor too. */
+.editor-page .ProseMirror { outline: none; font-family: var(--script-font-family); }
 .editor-page .ProseMirror .sp-scene,
 .editor-page .ProseMirror .sp-action,
 .editor-page .ProseMirror .sp-char,
@@ -551,7 +563,7 @@ button {
 
 /* ---------------- Settings ---------------- */
 .settings-view { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.settings-body { padding: 4px 16px 24px; max-width: 420px; }
+.settings-body { padding: 4px 16px 24px; max-width: 640px; }
 .settings-section { padding: 16px 0; border-top: 1px solid var(--border); }
 .settings-section:first-child { border-top: none; }
 .settings-section-label {
@@ -571,13 +583,24 @@ button {
 .theme-toggle-btn.active .theme-toggle-label { color: var(--accent); }
 .theme-toggle-hint { font-size: 10px; color: var(--text-dim); }
 
+.settings-subsection-label {
+  font-size: 10px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 20px 0 10px;
+}
+.settings-font-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+@media (max-width: 560px) {
+  .settings-font-grid { grid-template-columns: 1fr; }
+}
 .settings-field { margin-top: 16px; }
+.settings-font-grid .settings-field { margin-top: 0; }
 .settings-field-label {
   display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;
 }
 .settings-field-hint { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
 
-.font-select { position: relative; max-width: 280px; }
+.font-select { position: relative; width: 100%; max-width: 320px; }
 .font-select-trigger {
   width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
   padding: 9px 12px;

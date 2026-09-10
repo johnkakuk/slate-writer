@@ -90,6 +90,9 @@ export function ProjectProvider({ children }) {
   );
   const [theme, setTheme] = useState(() => (persisted?.theme === 'light' ? 'light' : 'dark'));
   const [fontId, setFontId] = useState(() => (FONT_BY_ID[persisted?.fontId] ? persisted.fontId : DEFAULT_FONT_ID));
+  const [scriptFontId, setScriptFontId] = useState(() =>
+    FONT_BY_ID[persisted?.scriptFontId] ? persisted.scriptFontId : DEFAULT_FONT_ID
+  );
   const [projects, setProjects] = useState(() => buildInitialProjects(persisted));
   const [currentProjectId, setCurrentProjectId] = useState(() => {
     if (persisted?.currentProjectId && projects[persisted.currentProjectId]) {
@@ -120,10 +123,17 @@ export function ProjectProvider({ children }) {
   // Same idea for the selected font, but as a plain CSS custom property
   // (--font-family) rather than a [data-font] attribute + hardcoded CSS
   // blocks per option, since the value is a full font-family stack, not a
-  // fixed enum of visual variants like the theme is.
+  // fixed enum of visual variants like the theme is. The script/page content
+  // (Screenplay view + the Editor -- both render the same .screenplay-page
+  // container) gets its own independent --script-font-family, so "the
+  // script" and "everywhere else" can be set separately.
   useEffect(() => {
     document.documentElement.style.setProperty('--font-family', fontStack(fontId));
   }, [fontId]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--script-font-family', fontStack(scriptFontId));
+  }, [scriptFontId]);
 
   // Persist whenever any project, the active project, sidebar, theme, or
   // font state changes (autosave).
@@ -133,13 +143,21 @@ export function ProjectProvider({ children }) {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ projects, currentProjectId, sidebarCollapsed, theme, fontId, lastSavedAt: savedAt })
+        JSON.stringify({
+          projects,
+          currentProjectId,
+          sidebarCollapsed,
+          theme,
+          fontId,
+          scriptFontId,
+          lastSavedAt: savedAt,
+        })
       );
     } catch {
       // localStorage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -472,6 +490,8 @@ export function ProjectProvider({ children }) {
       setTheme,
       fontId,
       setFontId,
+      scriptFontId,
+      setScriptFontId,
       project,
       projects,
       currentProjectId,
@@ -525,6 +545,7 @@ export function ProjectProvider({ children }) {
       toggleSidebar,
       theme,
       fontId,
+      scriptFontId,
       project,
       projects,
       currentProjectId,
