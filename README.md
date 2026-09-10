@@ -4,7 +4,7 @@ A purpose-built screenwriting web app — a lighter, local-first alternative to 
 
 ## Status
 
-Local-first, multi-project. No backend, no accounts, no sync — everything lives in the browser's (or, on iOS, the app's) `localStorage`. Ships as a web app and, via Capacitor, an iOS app shell — see [Running on iOS](#running-on-ios).
+Local-first, multi-project. No backend, no accounts, no sync — everything lives in the browser's (or, on iOS/desktop, the app's) `localStorage`. Ships as a web app, an iOS app shell via Capacitor (see [Running on iOS](#running-on-ios)), and a native desktop app via Electron (see [Running on Desktop](#running-on-desktop)).
 
 ## Tech stack
 
@@ -14,6 +14,7 @@ Local-first, multi-project. No backend, no accounts, no sync — everything live
 - **Plain CSS custom properties** — dark/light theme via `[data-theme]`, no CSS framework.
 - **Capacitor** — wraps the built web app in a native iOS shell for on-device installs. No React Native — see [Running on iOS](#running-on-ios) for why.
 - **jsPDF** — client-side screenplay PDF export (`src/export/`). Courier is one of its built-in base-14 fonts, so no font file needs embedding.
+- **Electron** — wraps the built web app in a native desktop shell (`electron/main.cjs`), packaged with `electron-builder` — see [Running on Desktop](#running-on-desktop).
 
 ## Getting started
 
@@ -75,6 +76,24 @@ Then in Xcode: pick your iPad as the run destination (or a Simulator), select a 
 
 **Important:** the Capacitor wrapper does not fix the touch drag-and-drop gap below — it's the same web code, just in a native shell. Reordering the Outline board still needs a mouse/trackpad (e.g., an attached trackpad, or Sidecar/a Mac) until that gap is actually addressed.
 
+## Running on Desktop
+
+Slate Writer also ships as a native desktop app via **Electron** (`electron/main.cjs` — a `BrowserWindow` loading the built web app), packaged with `electron-builder`. Same `localStorage`-backed persistence as the web app — Electron's default session persists it to disk (`~/Library/Application Support/Slate Writer` on macOS) automatically, so data survives quitting and relaunching the app. Verified by actually closing and relaunching the packaged app and confirming state survives, not just by reasoning about how Electron sessions are supposed to work.
+
+**To build and run:**
+```
+npm run electron:dev       # dev mode, hot-reloads against the Vite dev server
+npm run electron:preview   # builds once, then launches Electron against dist/ (quick manual check, no packaging)
+npm run electron:dist      # builds and packages a real installable app (release/)
+```
+`electron:dist` currently targets a macOS `.dmg` (`build.mac` in `package.json`) — unsigned, since there's no Apple Developer ID configured, so macOS Gatekeeper will warn on first open (right-click → Open bypasses it). Add `win`/`linux` targets to `build` in `package.json` when those platforms are needed.
+
+**Packaging note:** `build.files` explicitly excludes `node_modules` — the renderer only ever loads the already-bundled `dist/` output, and the main process only touches Electron/Node built-ins, so none of the app's own npm dependencies (React, ProseMirror, jsPDF, etc.) need to physically exist inside the packaged app. Leaving that default in would have quietly bundled every dependency (including unrelated ones like the Capacitor/iOS tooling) into the app for no reason.
+
+**One dependency-resolution snag hit while setting this up:** `electron-builder`'s DMG-blockmap step pulls in `@noble/hashes`, and the version it resolved to (2.x) is ESM-only while `electron-builder` `require()`s it — crashes immediately on `vite build && electron-builder`. Fixed with an `overrides` entry in `package.json` pinning `@noble/hashes` to the last 1.x release (still has a CommonJS build). Remove the override if a future `electron-builder` release fixes this upstream.
+
+**App icon:** the same placeholder green "S" mark used on iOS (`assets/icon.png`), converted to `build/icon.icns` via `sips`/`iconutil` (both macOS built-ins, no extra dependency) and wired in via `build.mac.icon` in `package.json`. Regenerate it the same way if `assets/icon.png` ever changes — there's no automated regen step for the desktop build the way `capacitor-assets` provides for iOS.
+
 ## What's stubbed (not real yet)
 
 - **Trash / soft delete** — doesn't exist yet, not even a placeholder in the sidebar (deliberately removed rather than left as dead UI). Beat card and doc deletion are currently **permanent**.
@@ -85,13 +104,13 @@ Then in Xcode: pick your iPad as the run destination (or a Simulator), select a 
 
 Roughly in the order they'd unblock real use:
 
-1. **Trash / soft delete** — right now "Delete" (beat cards, acts, docs, and projects alike) is permanent. Needs an actual trash mechanism before that's safe to rely on; deliberately not a stub UI in the meantime.
-2. **`.fountain` serializer + parser** — doc → Fountain (for export and true portability) and Fountain → doc (for import). Called out in the original planning doc as a small, well-scoped task now that there's an actual document to serialize.
-3. **PDF export polish** — `(MORE)` / `(CONT'D)` markers when Dialogue itself splits across a page break; see [Known limitations](#known-limitations).
-4. **Touch drag-and-drop** — see [Known limitations](#known-limitations); matters more now that there's a real iPad app to use it on.
-5. **Revision history** — explicitly deferred during planning; can come back if it turns out to be needed.
-6. **Real app icon / splash art** — current one is a placeholder green "S," see [Running on iOS](#running-on-ios).
-7. **Mac port** — the original platform order (web → iOS → Mac) is why the Editor is kept as a self-contained module; iOS is now covered, Mac is the remaining leg.
+1. **Cloud backend (MongoDB + real user auth), deployed on Vercel** — the actual "access it from anywhere" goal. A genuine architecture shift, not a feature add: every `localStorage` read/write in `ProjectContext` becomes a network call, autosave becomes debounced instead of instant, and it needs a decision between bolting a thin `/api` layer onto the current Vite SPA or migrating to Next.js (which makes serverless functions + auth on Vercel considerably less painful). Deliberately deferred in favor of the Electron desktop build below, which unblocks real use today with no rewrite.
+2. **Trash / soft delete** — right now "Delete" (beat cards, acts, docs, and projects alike) is permanent. Needs an actual trash mechanism before that's safe to rely on; deliberately not a stub UI in the meantime.
+3. **`.fountain` serializer + parser** — doc → Fountain (for export and true portability) and Fountain → doc (for import). Called out in the original planning doc as a small, well-scoped task now that there's an actual document to serialize.
+4. **PDF export polish** — `(MORE)` / `(CONT'D)` markers when Dialogue itself splits across a page break; see [Known limitations](#known-limitations).
+5. **Touch drag-and-drop** — see [Known limitations](#known-limitations); matters more now that there's a real iPad app to use it on.
+6. **Revision history** — explicitly deferred during planning; can come back if it turns out to be needed.
+7. **Real app icon / splash art** — both iOS and desktop currently use the same placeholder green "S" mark (`assets/icon.png`), see [Running on iOS](#running-on-ios) and [Running on Desktop](#running-on-desktop).
 8. **Multiple selections** - enable multiple file selections and bulk operations in sidebar menu
 
 ## Architecture
@@ -107,7 +126,7 @@ Roughly in the order they'd unblock real use:
 ## Known limitations
 
 - **No touch support for drag-and-drop.** Native HTML5 DnD (used for the Outline board) doesn't work on iPad Safari (or the Capacitor app's WebView) or other touch devices — mouse/trackpad only. Accepted gap, not a bug, per the original planning decision to defer pulling in a real DnD library — but see [Running on iOS](#running-on-ios) for why it matters more now.
-- **No backend.** Everything is `localStorage`, scoped to one browser (or the one iOS app) on one device. Clearing site data / deleting the app loses everything.
+- **No backend.** Everything is `localStorage`, scoped to one browser (or one iOS app, or one desktop app install) on one device — the web, iOS, and Electron builds each have their own separate storage, not a shared one. Clearing site data / deleting the app loses everything. See [Roadmap](#roadmap) for the planned cloud backend that actually unifies this.
 - **Beat card, doc, and project deletion are all permanent.** No undo, no Trash yet (see [Roadmap](#roadmap)).
 - **PDF export doesn't add `(MORE)` / `(CONT'D)` markers when Dialogue splits across a page break.** A Character cue is always kept with at least its Dialogue's first line (see [Architecture](#architecture)), and a monologue longer than a full page does correctly continue onto the next one rather than running off the bottom — it just does so silently, without the marked-continuation convention a reader would expect.
 
