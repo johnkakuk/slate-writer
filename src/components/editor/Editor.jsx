@@ -11,20 +11,29 @@ import { placeholderPlugin } from '../../editor/placeholderPlugin.js';
 import { slashMenuPlugin, slashMenuKey } from '../../editor/slashMenu/slashMenuPlugin.js';
 import SlashMenu from '../../editor/slashMenu/SlashMenu.jsx';
 import { findBlockById } from '../../editor/docUtils.js';
+import { emptyDoc } from '../../editor/docJson.js';
 
 // Not read reactively: the document loaded here becomes the live editing
-// session's own state. Edits flow *out* to ProjectContext (updateScreenplayDoc)
-// on every change; they don't flow back in, so typing here is never fought
-// by a re-render from elsewhere in the app.
+// session's own state. Edits flow *out* to ProjectContext
+// (updateCardSceneDoc, scoped to this one card) on every change; they
+// don't flow back in, so typing here is never fought by a re-render from
+// elsewhere in the app. Each card owns a separate sceneDoc, so opening a
+// different card always means a fresh mount with a different document --
+// there is no "same file" to leak edits between cards.
 export default function Editor() {
-  const { project, view, updateScreenplayDoc } = useProject();
+  const { project, view, updateCardSceneDoc } = useProject();
+  const { actId, cardId } = view.payload ?? {};
+  const act = project.acts.find((a) => a.id === actId);
+  const card = act?.cards.find((c) => c.id === cardId);
+
   const mountRef = useRef(null);
   const viewRef = useRef(null);
-  const initialDocRef = useRef(project.screenplayDoc);
+  const initialDocRef = useRef(card?.sceneDoc ?? emptyDoc());
   const initialTargetRef = useRef(view.payload);
   const [slashState, setSlashState] = useState(null);
 
   useEffect(() => {
+    if (!card) return undefined;
     const state = EditorState.create({
       doc: Node.fromJSON(schema, initialDocRef.current),
       plugins: [slashMenuPlugin(), editorKeymap(), history(), autoCapsPlugin(), placeholderPlugin()],
@@ -36,15 +45,19 @@ export default function Editor() {
         const newState = editorView.state.apply(tr);
         editorView.updateState(newState);
         setSlashState(slashMenuKey.getState(newState));
-        if (tr.docChanged) updateScreenplayDoc(newState.doc.toJSON());
+        if (tr.docChanged) updateCardSceneDoc(actId, cardId, newState.doc.toJSON());
       },
     });
     viewRef.current = editorView;
     setSlashState(slashMenuKey.getState(editorView.state));
 
-    const target = initialTargetRef.current;
-    if (target?.sceneId) {
-      const found = findBlockById(editorView.state.doc, target.sceneId);
+    // Only a click on a specific Screenplay-view line carries a blockId to
+    // scroll to a precise spot within the scene; opening from a beat card
+    // (or the pencil icon, or the context menu) just lands at the top of
+    // what is now a single short scene, not a whole script to scroll through.
+    const blockId = initialTargetRef.current?.blockId;
+    if (blockId) {
+      const found = findBlockById(editorView.state.doc, blockId);
       if (found) {
         const sel = TextSelection.near(editorView.state.doc.resolve(found.pos + 1));
         editorView.dispatch(editorView.state.tr.setSelection(sel).scrollIntoView());
@@ -61,15 +74,22 @@ export default function Editor() {
 
   const target = view.payload;
 
+  if (!card) {
+    return (
+      <div className="placeholder-view">
+        <h2>Beat not found</h2>
+        <p>This beat card may have been deleted. Pick something from the Outline.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="editor-shell">
       <div className="editor-scroll">
         <div className="screenplay-head">
-          <div className="board-title">Editor — {project.name}</div>
+          <div className="board-title">{card.title}</div>
           <div className="board-sub">
-            {target?.label
-              ? `Opened at “${target.label}”${target.source ? ` (from ${target.source})` : ''}`
-              : 'Tab or “/” to change an element’s type.'}
+            {target?.source ? `Opened from ${target.source}` : 'Tab or “/” to change an element’s type.'}
           </div>
         </div>
         <div className="screenplay-page editor-page" ref={mountRef} />

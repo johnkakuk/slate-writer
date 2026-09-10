@@ -47,7 +47,7 @@ export default function CardContextMenu() {
       <button
         className="card-context-menu-item"
         onClick={() => {
-          navigate('editor', { sceneId: cardMenu.sceneId, label: cardMenu.title, source: 'beat card' });
+          navigate('editor', { actId: cardMenu.actId, cardId: cardMenu.cardId, label: cardMenu.title, source: 'beat card' });
           closeCardMenu();
         }}
       >

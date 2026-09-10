@@ -6,15 +6,23 @@ function nodeText(node) {
   return (node.content ?? []).map((c) => c.text ?? '').join('');
 }
 
-// Renders the live screenplay document read-only — this *is* the document
-// the Editor edits (src/state/ProjectContext.jsx `project.screenplayDoc`),
-// not a separate derived copy, so there's nothing to keep in sync.
+// Renders a live concatenation of every beat card's own sceneDoc, in
+// current outline order (acts, then cards within each act) -- computed
+// fresh on every render directly from `project.acts`, not from a separately
+// stored/derived document. That means there's nothing to keep in sync:
+// reordering, editing, adding, or deleting a card is reflected here
+// immediately just by virtue of reading the same live state.
 export default function ScreenplayView() {
   const { project, navigate } = useProject();
-  const nodes = project.screenplayDoc?.content ?? [];
 
-  function handleLineClick(node) {
-    navigate('editor', { sceneId: node.attrs?.id, label: nodeText(node), source: 'screenplay line' });
+  function handleLineClick(act, card, node) {
+    navigate('editor', {
+      actId: act.id,
+      cardId: card.id,
+      blockId: node.attrs?.id,
+      label: card.title,
+      source: 'screenplay line',
+    });
   }
 
   return (
@@ -25,20 +33,25 @@ export default function ScreenplayView() {
       </div>
       <div className="screenplay-scroll">
         <div className="screenplay-page">
-          {nodes.map((node, idx) => {
-            const meta = ELEMENT_TYPE_BY_NAME[node.type];
-            const text = nodeText(node);
-            if (!meta || !text) return null;
-            return (
-              <button
-                key={node.attrs?.id ?? idx}
-                className={`sp-block ${meta.css}`}
-                onClick={() => handleLineClick(node)}
-              >
-                {text}
-              </button>
-            );
-          })}
+          {project.acts.map((act) =>
+            act.cards.map((card) => {
+              const nodes = card.sceneDoc?.content ?? [];
+              return nodes.map((node, idx) => {
+                const meta = ELEMENT_TYPE_BY_NAME[node.type];
+                const text = nodeText(node);
+                if (!meta || !text) return null;
+                return (
+                  <button
+                    key={node.attrs?.id ?? `${card.id}-${idx}`}
+                    className={`sp-block ${meta.css}`}
+                    onClick={() => handleLineClick(act, card, node)}
+                  >
+                    {text}
+                  </button>
+                );
+              });
+            })
+          )}
         </div>
       </div>
     </div>

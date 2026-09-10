@@ -66,7 +66,7 @@ export default function BeatCard({ card, actId, number }) {
   }
 
   function openEditor() {
-    navigate('editor', { sceneId: card.sceneId, label: card.title, source: 'beat card' });
+    navigate('editor', { actId, cardId: card.id, label: card.title, source: 'beat card' });
   }
 
   function handleDragStart(e) {
@@ -88,7 +88,7 @@ export default function BeatCard({ card, actId, number }) {
   function handleContextMenu(e) {
     if (editing) return; // let the native text-editing context menu show instead
     e.preventDefault();
-    openCardMenu(actId, card.id, e.clientX, e.clientY, { sceneId: card.sceneId, title: card.title });
+    openCardMenu(actId, card.id, e.clientX, e.clientY, { title: card.title });
   }
 
   function handleEditIconClick(e) {

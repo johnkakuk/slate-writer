@@ -3,14 +3,13 @@
 // project (the rest of the switcher list, or anything created via "+ New
 // Project") gets provisioned from — a standard 3-act board and no docs yet.
 //
-// The screenplay document (`screenplayDoc`, a ProseMirror-shaped JSON tree —
-// see src/editor/schema.js) is the single source of real scene content. Each
-// beat card only holds editorial summary (title/description) plus a
-// `sceneId`, which is the `id` attr on that scene's scene_heading node in
-// the document — the anchor the Outline, Screenplay view, and Editor all
-// use to point at the same spot.
+// Each beat card owns its scene outright: `card.sceneDoc` is a
+// ProseMirror-shaped JSON tree (see src/editor/schema.js) holding just that
+// scene's content. There's no shared whole-script document — the Screenplay
+// view is a live concatenation of every card's sceneDoc in current outline
+// order (see ScreenplayView.jsx), so it never needs a separate sync step
+// when cards are added, edited, deleted, or reordered.
 import { generateId } from '../utils/id.js';
-import { emptyDoc } from '../editor/docJson.js';
 
 function docNode(type, id, text) {
   return { type, attrs: { id }, content: text ? [{ type: 'text', text }] : undefined };
@@ -20,30 +19,27 @@ function docFile(content) {
   return { id: generateId('doc'), content };
 }
 
-// `elements[0]` is always the scene heading; it gets `sceneId` as its id so
-// the beat card can reference it directly. Every other line gets its own
-// freshly generated id. `seedKey` only seeds the sceneId string for
-// readability while debugging — display numbering (SC. 01, etc.) is never
-// stored on the card, it's derived live from card order (see OutlineBoard).
+// `elements[0]` is always the scene heading. `seedKey` only seeds that
+// heading's id for readability while debugging — display numbering
+// (SC. 01, etc.) is never stored on the card, it's derived live from card
+// order (see OutlineBoard).
 function buildScene({ seedKey, title, description, elements }) {
-  const sceneId = `scene-${seedKey}`;
-  const docNodes = elements.map((el, idx) =>
-    docNode(el.type, idx === 0 ? sceneId : generateId('block'), el.text)
-  );
-  const card = {
+  const headingId = `scene-${seedKey}`;
+  const sceneDoc = {
+    type: 'doc',
+    content: elements.map((el, idx) => docNode(el.type, idx === 0 ? headingId : generateId('block'), el.text)),
+  };
+  return {
     id: generateId('card'),
     title,
     description,
     isFlagged: false,
-    sceneId,
+    sceneDoc,
   };
-  return { card, docNodes };
 }
 
 export function createSampleProject() {
-  const docContent = [];
-
-  const scene1 = buildScene({
+  const card1 = buildScene({
     seedKey: 1,
     title: 'Eli Finds the Letter',
     description: 'Looking for batteries in the junk drawer, he finds something else entirely.',
@@ -56,7 +52,7 @@ export function createSampleProject() {
     ],
   });
 
-  const scene2 = buildScene({
+  const card2 = buildScene({
     seedKey: 2,
     title: 'He Calls Mara',
     description: "She doesn't pick up. He leaves a voicemail he immediately regrets.",
@@ -68,7 +64,7 @@ export function createSampleProject() {
     ],
   });
 
-  const scene3 = buildScene({
+  const card3 = buildScene({
     seedKey: 3,
     title: 'Setting the Meeting',
     description: 'She agrees to talk — but only at the diner, and only for twenty minutes.',
@@ -78,7 +74,7 @@ export function createSampleProject() {
     ],
   });
 
-  const scene4 = buildScene({
+  const card4 = buildScene({
     seedKey: 4,
     title: 'Diner Confrontation',
     description: 'Rain outside, coffee going cold. He finally shows her the letter.',
@@ -97,7 +93,7 @@ export function createSampleProject() {
     ],
   });
 
-  const scene5 = buildScene({
+  const card5 = buildScene({
     seedKey: 5,
     title: 'Parking Lot Standoff',
     description: "She won't get in the car. He won't leave without her.",
@@ -112,7 +108,7 @@ export function createSampleProject() {
     ],
   });
 
-  const scene6 = buildScene({
+  const card6 = buildScene({
     seedKey: 6,
     title: 'Highway Confession',
     description: 'Twelve silent miles, then everything comes out at once.',
@@ -127,19 +123,14 @@ export function createSampleProject() {
     ],
   });
 
-  for (const scene of [scene1, scene2, scene3, scene4, scene5, scene6]) {
-    docContent.push(...scene.docNodes);
-  }
-
   return {
     id: generateId('project'),
     name: 'Long Way Down',
     acts: [
-      { id: generateId('act'), title: 'ACT I', cards: [scene1.card, scene2.card] },
-      { id: generateId('act'), title: 'ACT II', cards: [scene3.card, scene4.card, scene5.card] },
-      { id: generateId('act'), title: 'ACT III', cards: [scene6.card] },
+      { id: generateId('act'), title: 'ACT I', cards: [card1, card2] },
+      { id: generateId('act'), title: 'ACT II', cards: [card3, card4, card5] },
+      { id: generateId('act'), title: 'ACT III', cards: [card6] },
     ],
-    screenplayDoc: { type: 'doc', content: docContent },
     characterBible: [
       docFile(`# Mara
 
@@ -204,7 +195,6 @@ export function createEmptyProject(name) {
       { id: generateId('act'), title: 'ACT II', cards: [] },
       { id: generateId('act'), title: 'ACT III', cards: [] },
     ],
-    screenplayDoc: emptyDoc(),
     characterBible: [],
     notesResearch: [],
   };

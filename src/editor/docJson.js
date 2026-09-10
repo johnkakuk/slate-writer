@@ -1,7 +1,8 @@
-// Plain-JSON helpers for the screenplay document, deliberately free of any
+// Plain-JSON helpers for a scene document, deliberately free of any
 // ProseMirror runtime import — the app-state layer (ProjectContext) only
-// ever needs to read/append serialized doc JSON, never construct real
-// ProseMirror Node instances.
+// ever needs to read/build serialized doc JSON, never construct real
+// ProseMirror Node instances. Each beat card owns one of these directly
+// (`card.sceneDoc`) — there is no shared, whole-script document anymore.
 import { generateId } from '../utils/id.js';
 
 export function emptyDoc() {
@@ -16,26 +17,15 @@ export function textNode(type, id, text) {
   };
 }
 
-// Appends a bare scene heading (and one empty action line beneath it) to the
-// end of the document, tagged with `sceneId` — used when a new beat card is
-// added on the Outline so its sceneId always resolves to a real spot in the
-// document.
-export function appendEmptyScene(docJson, sceneId) {
-  const content = [...(docJson?.content ?? [])];
-  content.push({ type: 'scene_heading', attrs: { id: sceneId } });
-  content.push({ type: 'action', attrs: { id: generateId('block') } });
-  return { ...docJson, content };
-}
-
-// Removes the scene_heading tagged `sceneId` and every node after it up to
-// (not including) the next scene_heading — i.e. the whole scene, not just
-// its heading line. Used when a beat card is deleted, so the outline stays
-// the single source of truth for what scenes exist (per the care package —
-// no scene should linger in the document once its card is gone).
-export function removeScene(docJson, sceneId) {
-  const content = docJson?.content ?? [];
+// One-time migration helper only: pulls the node range belonging to
+// `sceneId` (its scene_heading and everything up to, not including, the
+// next scene_heading) out of what used to be one shared whole-script
+// document, back when scenes lived at positions within it instead of each
+// having their own doc. See ProjectContext's `migrateToPerCardDocs`.
+export function extractSceneRange(sharedDocJson, sceneId) {
+  const content = sharedDocJson?.content ?? [];
   const startIdx = content.findIndex((n) => n.type === 'scene_heading' && n.attrs?.id === sceneId);
-  if (startIdx === -1) return docJson;
+  if (startIdx === -1) return null;
 
   let endIdx = content.length;
   for (let i = startIdx + 1; i < content.length; i++) {
@@ -45,6 +35,5 @@ export function removeScene(docJson, sceneId) {
     }
   }
 
-  const newContent = [...content.slice(0, startIdx), ...content.slice(endIdx)];
-  return newContent.length ? { ...docJson, content: newContent } : emptyDoc();
+  return content.slice(startIdx, endIdx);
 }

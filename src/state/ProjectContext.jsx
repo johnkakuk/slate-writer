@@ -4,7 +4,7 @@ import { characterTemplate, noteTemplate } from './docTemplates.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
-import { appendEmptyScene, emptyDoc, removeScene } from '../editor/docJson.js';
+import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
@@ -18,25 +18,53 @@ function loadPersisted() {
   }
 }
 
+// Each beat card now owns its scene outright (`card.sceneDoc`) instead of
+// anchoring into one shared whole-script document (`project.screenplayDoc`
+// + `card.sceneId`) — the old shape meant every card opened the *same*
+// document just scrolled to a different spot, so an edit made while
+// viewing one card was visible from every other card too. A project still
+// carrying the old shape gets each card's slice of the old shared document
+// extracted into its own sceneDoc here, once, before anything else touches
+// the state.
+function migrateProjectToPerCardDocs(p) {
+  if (!p || !p.screenplayDoc) return p;
+  const sharedContent = p.screenplayDoc.content ?? [];
+  const acts = p.acts.map((act) => ({
+    ...act,
+    cards: act.cards.map((card) => {
+      const { sceneId, ...rest } = card;
+      if (rest.sceneDoc) return rest; // already migrated
+      const extracted = sceneId ? extractSceneRange(p.screenplayDoc, sceneId) : null;
+      return { ...rest, sceneDoc: extracted?.length ? { type: 'doc', content: extracted } : emptyDoc() };
+    }),
+  }));
+  const { screenplayDoc, ...rest } = p;
+  return { ...rest, acts };
+}
+
 // Builds the initial `projects` map from whatever was persisted, migrating
 // the pre-multi-project shape (a single `project`) if that's what's there,
 // or seeding a fresh install with one real project plus empty-template
-// projects for the rest of the switcher list.
+// projects for the rest of the switcher list. Every project (freshly
+// seeded or restored) passes through the per-card-doc migration above,
+// which is a no-op for anything already in the current shape.
 function buildInitialProjects(persisted) {
   if (persisted?.projects && typeof persisted.projects === 'object') {
-    return persisted.projects;
+    return Object.fromEntries(
+      Object.entries(persisted.projects).map(([id, p]) => [id, migrateProjectToPerCardDocs(p)])
+    );
   }
   if (persisted?.project) {
     const legacy = persisted.project;
     const id = legacy.id ?? generateId('project');
     return {
-      [id]: {
+      [id]: migrateProjectToPerCardDocs({
         ...legacy,
         id,
         screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
         characterBible: legacy.characterBible ?? [],
         notesResearch: legacy.notesResearch ?? [],
-      },
+      }),
     };
   }
   const sample = createSampleProject();
@@ -73,7 +101,7 @@ export function ProjectProvider({ children }) {
   const [view, setView] = useState({ name: 'outline', payload: null });
   const [dragState, setDragState] = useState(null); // { cardId, fromActId }
   const [dropPreview, setDropPreview] = useState(null); // { actId, beforeCardId }
-  const [cardMenu, setCardMenu] = useState(null); // { actId, cardId, sceneId, title, x, y }
+  const [cardMenu, setCardMenu] = useState(null); // { actId, cardId, title, x, y }
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { actId, cardId, title, x, y }
   const [fileMenu, setFileMenu] = useState(null); // { docType, docId, title, x, y }
   const [fileDeleteConfirm, setFileDeleteConfirm] = useState(null); // { docType, docId, title, x, y }
@@ -226,7 +254,6 @@ export function ProjectProvider({ children }) {
 
   const addCard = useCallback(
     (actId) => {
-      const sceneId = generateId('scene');
       updateCurrentProject((p) => ({
         ...p,
         acts: p.acts.map((act) =>
@@ -240,21 +267,29 @@ export function ProjectProvider({ children }) {
                     title: 'Untitled beat',
                     description: 'Click to describe what happens here.',
                     isFlagged: false,
-                    sceneId,
+                    sceneDoc: emptyDoc(),
                   },
                 ],
               }
             : act
         ),
-        screenplayDoc: appendEmptyScene(p.screenplayDoc, sceneId),
       }));
     },
     [updateCurrentProject]
   );
 
-  const updateScreenplayDoc = useCallback(
-    (docJson) => {
-      updateCurrentProject((p) => ({ ...p, screenplayDoc: docJson }));
+  // Every card's sceneDoc is independent, so updating one just replaces
+  // that one card's field -- no shared document to coordinate with.
+  const updateCardSceneDoc = useCallback(
+    (actId, cardId, docJson) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        acts: p.acts.map((act) =>
+          act.id === actId
+            ? { ...act, cards: act.cards.map((c) => (c.id === cardId ? { ...c, sceneDoc: docJson } : c)) }
+            : act
+        ),
+      }));
     },
     [updateCurrentProject]
   );
@@ -274,24 +309,19 @@ export function ProjectProvider({ children }) {
   );
 
   const openCardMenu = useCallback((actId, cardId, x, y, meta) => {
-    setCardMenu({ actId, cardId, x, y, sceneId: meta?.sceneId, title: meta?.title });
+    setCardMenu({ actId, cardId, x, y, title: meta?.title });
   }, []);
 
   const closeCardMenu = useCallback(() => setCardMenu(null), []);
 
   const deleteCard = useCallback(
     (actId, cardId) => {
-      updateCurrentProject((p) => {
-        const act = p.acts.find((a) => a.id === actId);
-        const card = act?.cards.find((c) => c.id === cardId);
-        return {
-          ...p,
-          acts: p.acts.map((a) =>
-            a.id === actId ? { ...a, cards: a.cards.filter((c) => c.id !== cardId) } : a
-          ),
-          screenplayDoc: card ? removeScene(p.screenplayDoc, card.sceneId) : p.screenplayDoc,
-        };
-      });
+      // The card's sceneDoc belongs only to it -- deleting the card
+      // discards its content naturally, no shared document to clean up.
+      updateCurrentProject((p) => ({
+        ...p,
+        acts: p.acts.map((a) => (a.id === actId ? { ...a, cards: a.cards.filter((c) => c.id !== cardId) } : a)),
+      }));
       setCardMenu(null);
     },
     [updateCurrentProject]
@@ -462,7 +492,7 @@ export function ProjectProvider({ children }) {
       renameAct,
       addCard,
       updateCard,
-      updateScreenplayDoc,
+      updateCardSceneDoc,
       dragState,
       dropPreview,
       beginDrag,
@@ -515,7 +545,7 @@ export function ProjectProvider({ children }) {
       renameAct,
       addCard,
       updateCard,
-      updateScreenplayDoc,
+      updateCardSceneDoc,
       dragState,
       dropPreview,
       beginDrag,
