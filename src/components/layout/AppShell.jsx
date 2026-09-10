@@ -10,6 +10,9 @@ import MarkdownEditorView from '../docs/MarkdownEditorView.jsx';
 import SettingsView from '../settings/SettingsView.jsx';
 import FileContextMenu from './FileContextMenu.jsx';
 import FileDeleteConfirmPopover from './FileDeleteConfirmPopover.jsx';
+import DocTypeModal from './DocTypeModal.jsx';
+import DocTypeContextMenu from './DocTypeContextMenu.jsx';
+import DocTypeDeleteConfirmPopover from './DocTypeDeleteConfirmPopover.jsx';
 import Toast from '../shared/Toast.jsx';
 
 function CurrentView() {
@@ -48,6 +51,9 @@ export default function AppShell() {
       <Toast />
       <FileContextMenu />
       <FileDeleteConfirmPopover />
+      <DocTypeModal />
+      <DocTypeContextMenu />
+      <DocTypeDeleteConfirmPopover />
     </div>
   );
 }

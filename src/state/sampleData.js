@@ -10,6 +10,7 @@
 // order (see ScreenplayView.jsx), so it never needs a separate sync step
 // when cards are added, edited, deleted, or reordered.
 import { generateId } from '../utils/id.js';
+import { characterTemplate, noteTemplate } from './docTemplates.js';
 
 function docNode(type, id, text) {
   return { type, attrs: { id }, content: text ? [{ type: 'text', text }] : undefined };
@@ -17,6 +18,34 @@ function docNode(type, id, text) {
 
 function docFile(content) {
   return { id: generateId('doc'), content };
+}
+
+// Character Bible / Notes & Research aren't hardcoded folders anymore --
+// they're just the two document types every project starts with, same
+// shape as any custom type a user adds later (see DocTypeModal.jsx). Kept
+// as a factory (not a constant) so every project gets its own type ids and
+// doc arrays rather than sharing references.
+export function defaultDocTypes() {
+  return seedDocTypes([], []);
+}
+
+function seedDocTypes(characterDocs, noteDocs) {
+  return [
+    {
+      id: generateId('doctype'),
+      pluralLabel: 'Character Bible',
+      singularLabel: 'Character',
+      template: characterTemplate(),
+      docs: characterDocs,
+    },
+    {
+      id: generateId('doctype'),
+      pluralLabel: 'Notes & Research',
+      singularLabel: 'Note',
+      template: noteTemplate(),
+      docs: noteDocs,
+    },
+  ];
 }
 
 // A blank title page defaults its Title field to the project name so
@@ -118,8 +147,9 @@ export function createSampleProject() {
       { id: generateId('act'), title: 'ACT II', cards: [card3, card4, card5] },
       { id: generateId('act'), title: 'ACT III', cards: [card6] },
     ],
-    characterBible: [
-      docFile(`# Mara
+    docTypes: seedDocTypes(
+      [
+        docFile(`# Mara
 
 ## Physical Description
 30s. Exhausted in the specific way that comes from bracing for a conversation for weeks, not days.
@@ -136,7 +166,7 @@ Eli — the letter is the whole relationship, condensed. She's not at the diner 
 ## Arc Notes
 Diner → parking lot → the car: each beat is her deciding, again, whether to stay in the scene.
 `),
-      docFile(`# Eli
+        docFile(`# Eli
 
 ## Physical Description
 (TODO)
@@ -153,26 +183,28 @@ Mara — see her file. He's driving, literally and otherwise, for most of the ba
 ## Arc Notes
 By the highway scene he's out of ways to avoid the conversation. That's the point of the drive.
 `),
-    ],
-    notesResearch: [
-      docFile(`# Character voice
+      ],
+      [
+        docFile(`# Character voice
 
 Keep Eli's dialogue indirect until the highway scene — that's where he finally says the thing plainly. Mara gets fewer lines than Eli throughout; let the silences do the work (see the parenthetical in Scene 4).
 `),
-      docFile(`# Timeline
+        docFile(`# Timeline
 
 - Scene 1–2: same night, Eli's apartment
 - Scene 3: phone call, unspecified gap (hours? a day?) — decide before locking the diner scene
 - Scene 4–6: continuous, one night, diner → parking lot → highway
 `),
-    ],
+      ]
+    ),
   };
 }
 
 // A brand-new project (from "+ New Project" or picking an unprovisioned name
-// from the switcher) starts with the standard 3-act structure and nothing
-// else — Character Bible and Notes & Research start empty; individual docs
-// get their own starter template when added (see docTemplates.js).
+// from the switcher) starts with the standard 3-act structure and the two
+// default document types (Character Bible, Notes & Research), both empty --
+// same starting point as every project, and just as deletable/renamable as
+// any custom type added later.
 export function createEmptyProject(name) {
   return {
     id: generateId('project'),
@@ -183,8 +215,7 @@ export function createEmptyProject(name) {
       { id: generateId('act'), title: 'ACT II', cards: [] },
       { id: generateId('act'), title: 'ACT III', cards: [] },
     ],
-    characterBible: [],
-    notesResearch: [],
+    docTypes: defaultDocTypes(),
   };
 }
 

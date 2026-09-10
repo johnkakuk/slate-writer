@@ -45,18 +45,18 @@ export default function FileContextMenu() {
       <button
         className="card-context-menu-item"
         onClick={() => {
-          navigate('doc', { docType: fileMenu.docType, docId: fileMenu.docId });
+          navigate('doc', { docTypeId: fileMenu.docTypeId, docId: fileMenu.docId });
           closeFileMenu();
         }}
       >
         Edit
       </button>
-      <button className="card-context-menu-item" onClick={() => duplicateDoc(fileMenu.docType, fileMenu.docId)}>
+      <button className="card-context-menu-item" onClick={() => duplicateDoc(fileMenu.docTypeId, fileMenu.docId)}>
         Duplicate
       </button>
       <button
         className="card-context-menu-item danger"
-        onClick={() => requestDeleteDoc(fileMenu.docType, fileMenu.docId, fileMenu.title, x, y)}
+        onClick={() => requestDeleteDoc(fileMenu.docTypeId, fileMenu.docId, fileMenu.title, x, y)}
       >
         Delete
       </button>

@@ -4,7 +4,7 @@ import { exampleSetup } from 'prosemirror-example-setup';
 import { sinkListItem, liftListItem } from 'prosemirror-schema-list';
 import { schema } from './markdownSerde.js';
 import { markInputRules } from './markInputRules.js';
-import { blankLineCleanupPlugin } from './blankLineCleanup.js';
+import { emptyDocPlaceholder } from './emptyDocPlaceholder.js';
 
 // exampleSetup already covers input rules (# heading, - / * / + bullet list,
 // 1. ordered list, > blockquote, ``` code block) and a keymap (Mod-B/Mod-I,
@@ -12,7 +12,11 @@ import { blankLineCleanupPlugin } from './blankLineCleanup.js';
 // etc.) — see prosemirror-example-setup. The only gap for this app is Tab /
 // Shift-Tab for indenting list items, which is the more expected binding
 // here (matches the screenplay editor's own Tab behavior) than Mod-[ / Mod-].
-export function richTextPlugins() {
+//
+// `placeholder` is optional -- only the Add/Edit Data Type modal's template
+// composer passes one (see DocTypeModal.jsx); real Character Bible / Notes
+// & Research documents don't get a ghost hint on their own blank lines.
+export function richTextPlugins(placeholder) {
   const listItem = schema.nodes.list_item;
   const listIndentKeymap = keymap({
     Tab: sinkListItem(listItem),
@@ -23,5 +27,7 @@ export function richTextPlugins() {
   // ProseMirror allows multiple, they just each check their own rules.
   const markRules = inputRules({ rules: markInputRules(schema) });
 
-  return [listIndentKeymap, markRules, blankLineCleanupPlugin(), ...exampleSetup({ schema, menuBar: false })];
+  const plugins = [listIndentKeymap, markRules, ...exampleSetup({ schema, menuBar: false })];
+  if (placeholder) plugins.push(emptyDocPlaceholder(placeholder));
+  return plugins;
 }
