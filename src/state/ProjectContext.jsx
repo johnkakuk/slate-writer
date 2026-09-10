@@ -7,13 +7,38 @@ import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
+// Under Electron, `window.slateStorage` (see electron/preload.cjs) backs
+// this with a real SQLite file instead of localStorage -- see
+// electron/main.cjs for why. The web build (and the Capacitor iOS build)
+// has no such bridge, so it keeps using localStorage directly.
 function loadPersisted() {
   try {
+    if (window.slateStorage) {
+      const raw = window.slateStorage.loadSync();
+      if (raw) return JSON.parse(raw);
+      // First launch under SQLite-backed storage: carry over anything an
+      // older, localStorage-backed build of the app already saved to this
+      // machine, so switching storage engines doesn't orphan in-progress
+      // work. A no-op once the migration has run once (SQLite won't be
+      // empty on the next launch).
+      const legacyRaw = localStorage.getItem(STORAGE_KEY);
+      if (!legacyRaw) return null;
+      window.slateStorage.save(legacyRaw);
+      return JSON.parse(legacyRaw);
+    }
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
     return null;
+  }
+}
+
+function savePersisted(json) {
+  if (window.slateStorage) {
+    window.slateStorage.save(json);
+  } else {
+    localStorage.setItem(STORAGE_KEY, json);
   }
 }
 
@@ -199,8 +224,7 @@ export function ProjectProvider({ children }) {
     const savedAt = Date.now();
     setLastSavedAt(savedAt);
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
+      savePersisted(
         JSON.stringify({
           projects,
           currentProjectId,
@@ -212,7 +236,7 @@ export function ProjectProvider({ children }) {
         })
       );
     } catch {
-      // localStorage unavailable (private mode, quota, etc.) — skip persistence silently.
+      // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId]);
