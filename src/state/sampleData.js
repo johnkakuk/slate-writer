@@ -44,11 +44,8 @@ export function createSampleProject() {
     title: 'Eli Finds the Letter',
     description: 'Looking for batteries in the junk drawer, he finds something else entirely.',
     elements: [
-      { type: 'scene_heading', text: "INT. ELI'S APARTMENT — NIGHT" },
-      {
-        type: 'action',
-        text: "Eli digs through a junk drawer. Batteries, dead pens, a broken watch. His hand stops on something else — an envelope, unopened, addressed in handwriting he knows too well.",
-      },
+      { type: 'scene_heading', text: 'INT. BEAT ONE — APARTMENT' },
+      { type: 'action', text: 'Placeholder content for Beat 1: Eli Finds the Letter.' },
     ],
   });
 
@@ -57,10 +54,9 @@ export function createSampleProject() {
     title: 'He Calls Mara',
     description: "She doesn't pick up. He leaves a voicemail he immediately regrets.",
     elements: [
-      { type: 'scene_heading', text: "INT. ELI'S APARTMENT — CONTINUOUS" },
-      { type: 'action', text: 'He dials. It rings out. The beep comes too fast.' },
+      { type: 'scene_heading', text: 'INT. BEAT TWO — APARTMENT' },
       { type: 'character', text: 'ELI' },
-      { type: 'dialogue', text: "Hey, it's — obviously it's me. Call me back. Please." },
+      { type: 'dialogue', text: 'This is beat two — He Calls Mara.' },
     ],
   });
 
@@ -69,8 +65,8 @@ export function createSampleProject() {
     title: 'Setting the Meeting',
     description: 'She agrees to talk — but only at the diner, and only for twenty minutes.',
     elements: [
-      { type: 'scene_heading', text: 'INT. DINER — NIGHT — ESTABLISHING' },
-      { type: 'action', text: 'A phone call, unseen. The agreement is made.' },
+      { type: 'scene_heading', text: 'INT. BEAT THREE — DINER' },
+      { type: 'action', text: 'Placeholder content for Beat 3: Setting the Meeting.' },
     ],
   });
 
@@ -79,17 +75,9 @@ export function createSampleProject() {
     title: 'Diner Confrontation',
     description: 'Rain outside, coffee going cold. He finally shows her the letter.',
     elements: [
-      { type: 'scene_heading', text: 'INT. DINER — NIGHT' },
-      {
-        type: 'action',
-        text: 'Rain streaks the window. MARA (30s, exhausted) turns a coffee cup in slow circles. Across from her, ELI watches, waiting.',
-      },
-      { type: 'character', text: 'ELI' },
-      { type: 'dialogue', text: "You're not going to say anything?" },
+      { type: 'scene_heading', text: 'INT. BEAT FOUR — DINER' },
       { type: 'character', text: 'MARA' },
-      { type: 'parenthetical', text: '(quietly)' },
-      { type: 'dialogue', text: "What's left to say." },
-      { type: 'transition', text: 'CUT TO:' },
+      { type: 'dialogue', text: 'This is beat four — Diner Confrontation.' },
     ],
   });
 
@@ -98,13 +86,8 @@ export function createSampleProject() {
     title: 'Parking Lot Standoff',
     description: "She won't get in the car. He won't leave without her.",
     elements: [
-      { type: 'scene_heading', text: 'EXT. DINER PARKING LOT — CONTINUOUS' },
-      {
-        type: 'action',
-        text: "Rain picks up. Mara stands by the passenger door, arms crossed. Eli waits at the driver's side, keys in hand.",
-      },
-      { type: 'character', text: 'MARA' },
-      { type: 'dialogue', text: "I'm not getting in that car until you tell me the truth." },
+      { type: 'scene_heading', text: 'EXT. BEAT FIVE — PARKING LOT' },
+      { type: 'action', text: 'Placeholder content for Beat 5: Parking Lot Standoff.' },
     ],
   });
 
@@ -113,13 +96,9 @@ export function createSampleProject() {
     title: 'Highway Confession',
     description: 'Twelve silent miles, then everything comes out at once.',
     elements: [
-      { type: 'scene_heading', text: 'INT. CAR — HIGHWAY — NIGHT' },
-      {
-        type: 'action',
-        text: 'Twelve miles of silence. Headlights sweep the dashboard. Finally, Eli speaks without looking over.',
-      },
+      { type: 'scene_heading', text: 'INT. BEAT SIX — CAR' },
       { type: 'character', text: 'ELI' },
-      { type: 'dialogue', text: "It wasn't supposed to happen like this." },
+      { type: 'dialogue', text: 'This is beat six — Highway Confession.' },
     ],
   });
 
