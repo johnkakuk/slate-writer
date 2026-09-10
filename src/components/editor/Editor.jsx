@@ -12,6 +12,7 @@ import { slashMenuPlugin, slashMenuKey } from '../../editor/slashMenu/slashMenuP
 import SlashMenu from '../../editor/slashMenu/SlashMenu.jsx';
 import { findBlockById } from '../../editor/docUtils.js';
 import { emptyDoc } from '../../editor/docJson.js';
+import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 
 // Not read reactively: the document loaded here becomes the live editing
 // session's own state. Edits flow *out* to ProjectContext
@@ -52,7 +53,14 @@ export default function Editor() {
     if (!card) return undefined;
     const state = EditorState.create({
       doc: Node.fromJSON(schema, initialDocRef.current),
-      plugins: [slashMenuPlugin(), editorKeymap(), history(), autoCapsPlugin(), placeholderPlugin()],
+      plugins: [
+        slashMenuPlugin(),
+        editorKeymap(),
+        history(),
+        autoCapsPlugin(),
+        placeholderPlugin(),
+        fountainPastePlugin(),
+      ],
     });
 
     const editorView = new EditorView(mountRef.current, {

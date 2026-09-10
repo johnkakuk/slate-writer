@@ -3,15 +3,11 @@ import { useProject } from '../../state/ProjectContext.jsx';
 import { titleFromMarkdown } from '../../utils/markdown.js';
 import MarkdownRichEditor from './MarkdownRichEditor.jsx';
 
-const DOC_TYPE_LABEL = {
-  characterBible: 'Character Bible',
-  notesResearch: 'Notes & Research',
-};
-
 export default function MarkdownEditorView() {
   const { project, view, updateDocContent } = useProject();
-  const { docType, docId } = view.payload ?? {};
-  const doc = project[docType]?.find((d) => d.id === docId);
+  const { docTypeId, docId } = view.payload ?? {};
+  const docType = project.docTypes.find((t) => t.id === docTypeId);
+  const doc = docType?.docs.find((d) => d.id === docId);
 
   if (!doc) {
     return (
@@ -28,13 +24,13 @@ export default function MarkdownEditorView() {
     <div className="markdown-editor-shell">
       <div className="screenplay-head">
         <div className="board-title">{title}</div>
-        <div className="board-sub">{DOC_TYPE_LABEL[docType] ?? 'Document'} — markdown, autosaved.</div>
+        <div className="board-sub">{docType.pluralLabel} — markdown, autosaved.</div>
       </div>
       <div className="markdown-editor-scroll">
         <MarkdownRichEditor
           docId={doc.id}
           initialContent={doc.content}
-          onChange={(content) => updateDocContent(docType, docId, content)}
+          onChange={(content) => updateDocContent(docTypeId, docId, content)}
         />
       </div>
     </div>

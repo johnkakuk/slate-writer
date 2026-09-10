@@ -2,35 +2,58 @@ import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import { titleFromMarkdown } from '../../utils/markdown.js';
 
-function DocFolder({ label, docs, docType, activeDocId, defaultOpen, onAdd, onFileClick, onFileContextMenu }) {
-  const [open, setOpen] = useState(defaultOpen);
+function DocFolder({
+  docType,
+  activeDocId,
+  isDragging,
+  showIndicatorBefore,
+  onAdd,
+  onFileClick,
+  onFileContextMenu,
+  onDragStart,
+  onDragEnd,
+  onContextMenu,
+}) {
+  const [open, setOpen] = useState(true);
   return (
     <>
-      <div className="folder-row">
+      {showIndicatorBefore && <div className="drop-indicator" />}
+      <div
+        className={`folder-row${isDragging ? ' dragging' : ''}`}
+        draggable
+        data-doctype-id={docType.id}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onContextMenu={onContextMenu}
+      >
         <button className="folder" onClick={() => setOpen((o) => !o)}>
           <span className="folder-icon">{open ? '▾' : '▸'}</span>
-          {label}
+          {docType.pluralLabel}
         </button>
-        <button className="folder-add" onClick={onAdd} title={`New ${label.toLowerCase()} file`}>
+        <button className="folder-add" onClick={onAdd} title={`Add ${docType.singularLabel}`}>
           +
         </button>
       </div>
       {open && (
         <div className="folder-children">
-          {docs.map((doc) => {
+          {docType.docs.map((doc) => {
             const title = titleFromMarkdown(doc.content, 'Untitled');
             return (
               <button
                 key={doc.id}
                 className={`file${activeDocId === doc.id ? ' active' : ''}`}
-                onClick={() => onFileClick(docType, doc.id)}
-                onContextMenu={(e) => onFileContextMenu(e, docType, doc.id, title)}
+                onClick={() => onFileClick(docType.id, doc.id)}
+                onContextMenu={(e) => onFileContextMenu(e, docType.id, doc.id, title)}
               >
                 {title}
               </button>
             );
           })}
-          {docs.length === 0 && <div className="folder-empty">No files yet.</div>}
+          {docType.docs.length === 0 && (
+            <button className="folder-empty-add" onClick={onAdd}>
+              + {docType.singularLabel}
+            </button>
+          )}
         </div>
       )}
     </>
@@ -38,24 +61,73 @@ function DocFolder({ label, docs, docType, activeDocId, defaultOpen, onAdd, onFi
 }
 
 export default function FileTree() {
-  const { project, view, navigate, addCharacterDoc, addNoteDoc, openFileMenu, showToast } = useProject();
+  const {
+    project,
+    view,
+    navigate,
+    addDoc,
+    openFileMenu,
+    openAddDocTypeModal,
+    openDocTypeMenu,
+    docTypeDrag,
+    docTypeDropPreview,
+    beginDocTypeDrag,
+    endDocTypeDrag,
+    updateDocTypeDropPreview,
+    dropDocType,
+  } = useProject();
   const activeDocId = view.name === 'doc' ? view.payload?.docId : null;
-  const activeDocType = view.name === 'doc' ? view.payload?.docType : null;
+  const activeDocTypeId = view.name === 'doc' ? view.payload?.docTypeId : null;
 
-  function handleFileClick(docType, docId) {
-    navigate('doc', { docType, docId });
+  function handleFileClick(docTypeId, docId) {
+    navigate('doc', { docTypeId, docId });
   }
 
-  function handleFileContextMenu(e, docType, docId, title) {
+  function handleFileContextMenu(e, docTypeId, docId, title) {
     e.preventDefault();
-    openFileMenu(docType, docId, e.clientX, e.clientY, title);
+    openFileMenu(docTypeId, docId, e.clientX, e.clientY, title);
   }
+
+  function handleDocTypeContextMenu(e, docType) {
+    e.preventDefault();
+    openDocTypeMenu(docType.id, docType.pluralLabel, e.clientX, e.clientY);
+  }
+
+  // Only the custom doc-type folders reorder -- Outline/Beats, Title Page,
+  // and Screenplay above them are fixed nav, not part of this drag
+  // container at all, so they're never in reach of this handler.
+  function handleDragOver(e) {
+    e.preventDefault();
+    if (!docTypeDrag) return;
+    const container = e.currentTarget;
+    const rows = [...container.querySelectorAll('.folder-row')].filter(
+      (el) => el.dataset.doctypeId !== docTypeDrag.docTypeId
+    );
+    let beforeDocTypeId = null;
+    let closestOffset = -Infinity;
+    rows.forEach((el) => {
+      const box = el.getBoundingClientRect();
+      const offset = e.clientY - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) {
+        closestOffset = offset;
+        beforeDocTypeId = el.dataset.doctypeId;
+      }
+    });
+    updateDocTypeDropPreview(beforeDocTypeId);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    dropDocType();
+  }
+
+  const showIndicatorAt = docTypeDropPreview?.beforeDocTypeId;
 
   return (
     <div className="files">
       <div className="files-h">
         <span>{project.name.toUpperCase()}</span>
-        <button className="files-h-add" onClick={() => showToast('Adding files isn’t available yet')} title="Add file">
+        <button className="files-h-add" onClick={openAddDocTypeModal} title="Add data type">
           +
         </button>
       </div>
@@ -82,26 +154,24 @@ export default function FileTree() {
         Screenplay
       </button>
 
-      <DocFolder
-        label="Character Bible"
-        docs={project.characterBible}
-        docType="characterBible"
-        activeDocId={activeDocType === 'characterBible' ? activeDocId : null}
-        defaultOpen
-        onAdd={addCharacterDoc}
-        onFileClick={handleFileClick}
-        onFileContextMenu={handleFileContextMenu}
-      />
-      <DocFolder
-        label="Notes & Research"
-        docs={project.notesResearch}
-        docType="notesResearch"
-        activeDocId={activeDocType === 'notesResearch' ? activeDocId : null}
-        defaultOpen
-        onAdd={addNoteDoc}
-        onFileClick={handleFileClick}
-        onFileContextMenu={handleFileContextMenu}
-      />
+      <div onDragOver={handleDragOver} onDrop={handleDrop}>
+        {project.docTypes.map((docType) => (
+          <DocFolder
+            key={docType.id}
+            docType={docType}
+            activeDocId={activeDocTypeId === docType.id ? activeDocId : null}
+            isDragging={docTypeDrag?.docTypeId === docType.id}
+            showIndicatorBefore={showIndicatorAt === docType.id}
+            onAdd={() => addDoc(docType.id)}
+            onFileClick={handleFileClick}
+            onFileContextMenu={handleFileContextMenu}
+            onDragStart={() => beginDocTypeDrag(docType.id)}
+            onDragEnd={endDocTypeDrag}
+            onContextMenu={(e) => handleDocTypeContextMenu(e, docType)}
+          />
+        ))}
+        {showIndicatorAt === null && docTypeDrag && <div className="drop-indicator" />}
+      </div>
     </div>
   );
 }

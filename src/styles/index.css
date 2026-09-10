@@ -229,7 +229,8 @@ button {
 }
 .files-h-add { background: none; border: none; color: var(--text-dim); font-size: 11px; padding: 0 2px; }
 .files-h-add:hover { color: var(--text-secondary); }
-.folder-row { display: flex; align-items: center; }
+.folder-row { display: flex; align-items: center; cursor: grab; }
+.folder-row.dragging { opacity: 0.35; }
 .folder {
   font-size: 12px; color: var(--text-file-color); padding: 6px 10px;
   display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
@@ -242,6 +243,11 @@ button {
 }
 .folder-add:hover { color: var(--text-secondary); background: var(--surface); }
 .folder-empty { font-size: 11px; color: var(--text-dim); padding: 4px 10px 4px 28px; }
+.folder-empty-add {
+  font-size: 11px; color: var(--text-dim); padding: 5px 10px 5px 28px; text-align: left;
+  background: none; border: none; width: 100%;
+}
+.folder-empty-add:hover { color: var(--text-secondary); }
 .file {
   font-size: 12px; color: var(--text-file); padding: 6px 10px 6px 28px;
   display: flex; align-items: center; justify-content: space-between;
@@ -563,6 +569,12 @@ button {
   font-size: 13px; line-height: 1.7;
 }
 .markdown-rich-editor .ProseMirror { outline: none; min-height: calc(100vh - 220px); }
+.markdown-rich-editor .is-empty-doc::before {
+  content: attr(data-placeholder);
+  color: var(--placeholder-ink);
+  opacity: 0.55;
+  pointer-events: none;
+}
 
 .markdown-rich-editor p { margin: 0 0 14px; }
 .markdown-rich-editor h1, .markdown-rich-editor h2, .markdown-rich-editor h3,
@@ -698,3 +710,55 @@ button {
   z-index: 100; white-space: nowrap;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------------- Modal (Add/Edit Data Type) ---------------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 200; padding: 24px;
+}
+.modal {
+  width: 100%; max-width: 480px; max-height: calc(100vh - 48px);
+  background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.modal-close {
+  background: none; border: none; color: var(--text-dim); font-size: 18px; line-height: 1;
+  padding: 2px 6px; border-radius: 4px;
+}
+.modal-close:hover { color: var(--text-secondary); background: var(--surface); }
+.modal-body { padding: 16px; overflow-y: auto; min-height: 0; }
+.modal-field-label {
+  display: block; font-size: 10.5px; font-weight: 600; color: var(--text-dim);
+  letter-spacing: 0.03em; text-transform: uppercase; margin: 14px 0 6px;
+}
+.modal-field-label:first-child { margin-top: 0; }
+.modal-input {
+  width: 100%; font-size: 12.5px; color: var(--text); background: var(--surface);
+  border: 1px solid var(--border-alt); border-radius: 6px; padding: 8px 10px; outline: none;
+}
+.modal-input:focus { border-color: var(--accent); }
+.modal-field-hint { font-size: 10.5px; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+.modal-template-editor {
+  border: 1px solid var(--border-alt); border-radius: 6px; background: var(--bg-dark);
+  padding: 10px 12px; max-height: 240px; overflow-y: auto;
+}
+.modal-template-editor .markdown-rich-editor .ProseMirror { outline: none; min-height: 120px; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border);
+}
+.modal-cancel-btn {
+  font-size: 11.5px; font-weight: 600; padding: 7px 14px; border-radius: 6px;
+  background: transparent; border: 1px solid var(--border-alt); color: var(--text-muted);
+}
+.modal-cancel-btn:hover { background: var(--surface); color: var(--text); }
+.modal-save-btn {
+  font-size: 11.5px; font-weight: 600; padding: 7px 14px; border-radius: 6px;
+  background: var(--accent); color: var(--accent-ink); border: none;
+}
+.modal-save-btn:disabled { opacity: 0.5; cursor: default; }

@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES, defaultTitlePage } from './sampleData.js';
-import { characterTemplate, noteTemplate } from './docTemplates.js';
+import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES, defaultTitlePage, defaultDocTypes } from './sampleData.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
@@ -50,6 +49,41 @@ function migrateTitlePage(p) {
   return { ...p, titlePage: defaultTitlePage(p.name) };
 }
 
+// Character Bible / Notes & Research used to be two hardcoded top-level
+// fields (`characterBible`, `notesResearch`); now they're just the two
+// document types every project starts with, alongside any custom types a
+// user adds -- see DocTypeModal.jsx. A project persisted before custom
+// doc types existed gets those two fields folded into a `docTypes` array,
+// carrying its existing docs over untouched.
+function migrateDocTypes(p) {
+  if (p.docTypes) return p;
+  const { characterBible, notesResearch, ...rest } = p;
+  const [characterType, noteType] = defaultDocTypes();
+  return {
+    ...rest,
+    docTypes: [
+      { ...characterType, docs: characterBible ?? [] },
+      { ...noteType, docs: notesResearch ?? [] },
+    ],
+  };
+}
+
+// Early versions of the Add/Edit Data Type modal defaulted a blank
+// Singular Label to "Add New {plural}", baked into whatever got saved at
+// the time. The label is meant to be a bare noun ("Character", not "Add
+// New Character") so it composes cleanly wherever it's used (a button's
+// title, an empty-state prompt, etc. -- see FileTree.jsx) instead of being
+// locked into one fixed phrase. Strips that old convention from anything
+// already persisted; a no-op once every doc type has been saved since.
+function migrateSingularLabels(p) {
+  const ADD_NEW_RE = /^Add New /;
+  if (!p.docTypes.some((t) => ADD_NEW_RE.test(t.singularLabel))) return p;
+  return {
+    ...p,
+    docTypes: p.docTypes.map((t) => ({ ...t, singularLabel: t.singularLabel.replace(ADD_NEW_RE, '') })),
+  };
+}
+
 // Builds the initial `projects` map from whatever was persisted, migrating
 // the pre-multi-project shape (a single `project`) if that's what's there,
 // or seeding a fresh install with one real project plus empty-template
@@ -59,21 +93,28 @@ function migrateTitlePage(p) {
 function buildInitialProjects(persisted) {
   if (persisted?.projects && typeof persisted.projects === 'object') {
     return Object.fromEntries(
-      Object.entries(persisted.projects).map(([id, p]) => [id, migrateTitlePage(migrateProjectToPerCardDocs(p))])
+      Object.entries(persisted.projects).map(([id, p]) => [
+        id,
+        migrateSingularLabels(migrateDocTypes(migrateTitlePage(migrateProjectToPerCardDocs(p)))),
+      ])
     );
   }
   if (persisted?.project) {
     const legacy = persisted.project;
     const id = legacy.id ?? generateId('project');
     return {
-      [id]: migrateTitlePage(
-        migrateProjectToPerCardDocs({
-          ...legacy,
-          id,
-          screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
-          characterBible: legacy.characterBible ?? [],
-          notesResearch: legacy.notesResearch ?? [],
-        })
+      [id]: migrateSingularLabels(
+        migrateDocTypes(
+          migrateTitlePage(
+            migrateProjectToPerCardDocs({
+              ...legacy,
+              id,
+              screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
+              characterBible: legacy.characterBible ?? [],
+              notesResearch: legacy.notesResearch ?? [],
+            })
+          )
+        )
       ),
     };
   }
@@ -118,10 +159,15 @@ export function ProjectProvider({ children }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { actId, cardId, title, x, y }
   const [actMenu, setActMenu] = useState(null); // { actId, title, x, y }
   const [actDeleteConfirm, setActDeleteConfirm] = useState(null); // { actId, title, x, y }
-  const [fileMenu, setFileMenu] = useState(null); // { docType, docId, title, x, y }
-  const [fileDeleteConfirm, setFileDeleteConfirm] = useState(null); // { docType, docId, title, x, y }
+  const [fileMenu, setFileMenu] = useState(null); // { docTypeId, docId, title, x, y }
+  const [fileDeleteConfirm, setFileDeleteConfirm] = useState(null); // { docTypeId, docId, title, x, y }
   const [projectMenu, setProjectMenu] = useState(null); // { projectId, name, x, y }
   const [projectDeleteConfirm, setProjectDeleteConfirm] = useState(null); // { projectId, name, x, y }
+  const [docTypeModal, setDocTypeModal] = useState(null); // { mode: 'add' } | { mode: 'edit', docTypeId, pluralLabel, singularLabel, template }
+  const [docTypeMenu, setDocTypeMenu] = useState(null); // { docTypeId, pluralLabel, x, y }
+  const [docTypeDeleteConfirm, setDocTypeDeleteConfirm] = useState(null); // { docTypeId, pluralLabel, docCount, x, y }
+  const [docTypeDrag, setDocTypeDrag] = useState(null); // { docTypeId }
+  const [docTypeDropPreview, setDocTypeDropPreview] = useState(null); // { beforeDocTypeId }
   const [toast, setToast] = useState(null); // { message, key }
 
   const project = projects[currentProjectId];
@@ -459,56 +505,70 @@ export function ProjectProvider({ children }) {
     [updateCurrentProject, dragState, dropPreview]
   );
 
-  // ---- Character Bible / Notes & Research docs ----
-  // `docType` is 'characterBible' | 'notesResearch' — matches the field name
-  // directly on the project object, so no translation layer is needed.
+  // ---- Document types (Character Bible / Notes & Research / any custom
+  // type added via the "+" next to the project name) and their docs ----
+  // `docTypeId` identifies which type's `docs` array a doc lives in --
+  // Character Bible and Notes & Research are just the two types every
+  // project starts with (see defaultDocTypes in sampleData.js), not
+  // special-cased anywhere below.
 
-  const addCharacterDoc = useCallback(() => {
-    const doc = { id: generateId('doc'), content: characterTemplate() };
-    updateCurrentProject((p) => ({ ...p, characterBible: [...p.characterBible, doc] }));
-    setView({ name: 'doc', payload: { docType: 'characterBible', docId: doc.id } });
-  }, [updateCurrentProject]);
-
-  const addNoteDoc = useCallback(() => {
-    const doc = { id: generateId('doc'), content: noteTemplate() };
-    updateCurrentProject((p) => ({ ...p, notesResearch: [...p.notesResearch, doc] }));
-    setView({ name: 'doc', payload: { docType: 'notesResearch', docId: doc.id } });
-  }, [updateCurrentProject]);
-
-  const updateDocContent = useCallback(
-    (docType, docId, content) => {
+  const addDoc = useCallback(
+    (docTypeId) => {
+      const doc = { id: generateId('doc') };
       updateCurrentProject((p) => ({
         ...p,
-        [docType]: p[docType].map((d) => (d.id === docId ? { ...d, content } : d)),
+        docTypes: p.docTypes.map((t) =>
+          t.id === docTypeId ? { ...t, docs: [...t.docs, { ...doc, content: t.template ?? '' }] } : t
+        ),
+      }));
+      setView({ name: 'doc', payload: { docTypeId, docId: doc.id } });
+    },
+    [updateCurrentProject]
+  );
+
+  const updateDocContent = useCallback(
+    (docTypeId, docId, content) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        docTypes: p.docTypes.map((t) =>
+          t.id === docTypeId ? { ...t, docs: t.docs.map((d) => (d.id === docId ? { ...d, content } : d)) } : t
+        ),
       }));
     },
     [updateCurrentProject]
   );
 
   const duplicateDoc = useCallback(
-    (docType, docId) => {
-      updateCurrentProject((p) => {
-        const idx = p[docType].findIndex((d) => d.id === docId);
-        if (idx === -1) return p;
-        const copy = { id: generateId('doc'), content: duplicateMarkdown(p[docType][idx].content) };
-        const list = [...p[docType]];
-        list.splice(idx + 1, 0, copy);
-        return { ...p, [docType]: list };
-      });
+    (docTypeId, docId) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        docTypes: p.docTypes.map((t) => {
+          if (t.id !== docTypeId) return t;
+          const idx = t.docs.findIndex((d) => d.id === docId);
+          if (idx === -1) return t;
+          const copy = { id: generateId('doc'), content: duplicateMarkdown(t.docs[idx].content) };
+          const docs = [...t.docs];
+          docs.splice(idx + 1, 0, copy);
+          return { ...t, docs };
+        }),
+      }));
       setFileMenu(null);
     },
     [updateCurrentProject]
   );
 
-  const openFileMenu = useCallback((docType, docId, x, y, title) => {
-    setFileMenu({ docType, docId, x, y, title });
+  const openFileMenu = useCallback((docTypeId, docId, x, y, title) => {
+    setFileMenu({ docTypeId, docId, x, y, title });
   }, []);
 
   const closeFileMenu = useCallback(() => setFileMenu(null), []);
 
   const deleteDoc = useCallback(
-    (docType, docId) => {
-      updateCurrentProject((p) => ({ ...p, [docType]: p[docType].filter((d) => d.id !== docId) }));
+    (docTypeId, docId) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        docTypes: p.docTypes.map((t) => (t.id === docTypeId ? { ...t, docs: t.docs.filter((d) => d.id !== docId) } : t)),
+      }));
       // If the doc being deleted is the one currently open, don't leave the
       // user staring at an editor for a document that no longer exists.
       setView((v) => (v.name === 'doc' && v.payload?.docId === docId ? { name: 'outline', payload: null } : v));
@@ -516,19 +576,142 @@ export function ProjectProvider({ children }) {
     [updateCurrentProject]
   );
 
-  const requestDeleteDoc = useCallback((docType, docId, title, x, y) => {
+  const requestDeleteDoc = useCallback((docTypeId, docId, title, x, y) => {
     setFileMenu(null);
-    setFileDeleteConfirm({ docType, docId, title, x, y });
+    setFileDeleteConfirm({ docTypeId, docId, title, x, y });
   }, []);
 
   const cancelDeleteDoc = useCallback(() => setFileDeleteConfirm(null), []);
 
   const confirmDeleteDoc = useCallback(() => {
     setFileDeleteConfirm((current) => {
-      if (current) deleteDoc(current.docType, current.docId);
+      if (current) deleteDoc(current.docTypeId, current.docId);
       return null;
     });
   }, [deleteDoc]);
+
+  // ---- Document types themselves: add/edit (via a modal, see
+  // DocTypeModal.jsx), delete (confirm-protected, right-click), and
+  // drag-to-reorder (mirrors the beat-card drag pattern, just a flat list
+  // instead of acts-of-cards). ----
+
+  // `key` is unique per open (not per doc type) -- lets the modal's
+  // template editor (an uncontrolled ProseMirror instance keyed on it, see
+  // DocTypeModal.jsx) force a genuinely fresh remount every time the modal
+  // opens, including two consecutive "Add" opens, which would otherwise
+  // share the same identity and leave stale content behind.
+  const openAddDocTypeModal = useCallback(() => setDocTypeModal({ mode: 'add', key: generateId('modal') }), []);
+
+  const openEditDocTypeModal = useCallback(
+    (docTypeId) => {
+      const t = project?.docTypes.find((dt) => dt.id === docTypeId);
+      if (!t) return;
+      setDocTypeModal({
+        mode: 'edit',
+        key: generateId('modal'),
+        docTypeId,
+        pluralLabel: t.pluralLabel,
+        singularLabel: t.singularLabel,
+        template: t.template,
+      });
+    },
+    [project]
+  );
+
+  const closeDocTypeModal = useCallback(() => setDocTypeModal(null), []);
+
+  const addDocType = useCallback(
+    ({ pluralLabel, singularLabel, template }) => {
+      const trimmed = pluralLabel.trim();
+      if (!trimmed) return;
+      const t = {
+        id: generateId('doctype'),
+        pluralLabel: trimmed,
+        singularLabel: singularLabel.trim() || trimmed,
+        template: template ?? '',
+        docs: [],
+      };
+      updateCurrentProject((p) => ({ ...p, docTypes: [...p.docTypes, t] }));
+      setDocTypeModal(null);
+    },
+    [updateCurrentProject]
+  );
+
+  const updateDocType = useCallback(
+    (docTypeId, { pluralLabel, singularLabel, template }) => {
+      const trimmed = pluralLabel.trim();
+      if (!trimmed) return;
+      updateCurrentProject((p) => ({
+        ...p,
+        docTypes: p.docTypes.map((t) =>
+          t.id === docTypeId
+            ? { ...t, pluralLabel: trimmed, singularLabel: singularLabel.trim() || trimmed, template: template ?? '' }
+            : t
+        ),
+      }));
+      setDocTypeModal(null);
+    },
+    [updateCurrentProject]
+  );
+
+  const openDocTypeMenu = useCallback((docTypeId, pluralLabel, x, y) => {
+    setDocTypeMenu({ docTypeId, pluralLabel, x, y });
+  }, []);
+
+  const closeDocTypeMenu = useCallback(() => setDocTypeMenu(null), []);
+
+  const deleteDocType = useCallback(
+    (docTypeId) => {
+      updateCurrentProject((p) => ({ ...p, docTypes: p.docTypes.filter((t) => t.id !== docTypeId) }));
+      // If a doc from the deleted type is open, don't leave the user
+      // staring at an editor for a document that no longer exists.
+      setView((v) => (v.name === 'doc' && v.payload?.docTypeId === docTypeId ? { name: 'outline', payload: null } : v));
+    },
+    [updateCurrentProject]
+  );
+
+  // Deleting a type takes every doc inside it with it -- always confirm
+  // first, same pattern as beat cards, acts, docs, and projects.
+  const requestDeleteDocType = useCallback((docTypeId, pluralLabel, docCount, x, y) => {
+    setDocTypeMenu(null);
+    setDocTypeDeleteConfirm({ docTypeId, pluralLabel, docCount, x, y });
+  }, []);
+
+  const cancelDeleteDocType = useCallback(() => setDocTypeDeleteConfirm(null), []);
+
+  const confirmDeleteDocType = useCallback(() => {
+    setDocTypeDeleteConfirm((current) => {
+      if (current) deleteDocType(current.docTypeId);
+      return null;
+    });
+  }, [deleteDocType]);
+
+  const beginDocTypeDrag = useCallback((docTypeId) => setDocTypeDrag({ docTypeId }), []);
+
+  const endDocTypeDrag = useCallback(() => {
+    setDocTypeDrag(null);
+    setDocTypeDropPreview(null);
+  }, []);
+
+  const updateDocTypeDropPreview = useCallback((beforeDocTypeId) => {
+    setDocTypeDropPreview((prev) => (prev && prev.beforeDocTypeId === beforeDocTypeId ? prev : { beforeDocTypeId }));
+  }, []);
+
+  const dropDocType = useCallback(() => {
+    updateCurrentProject((p) => {
+      if (!docTypeDrag || !docTypeDropPreview) return p;
+      const { docTypeId } = docTypeDrag;
+      const { beforeDocTypeId } = docTypeDropPreview;
+      const current = p.docTypes.find((t) => t.id === docTypeId);
+      if (!current) return p;
+      const rest = p.docTypes.filter((t) => t.id !== docTypeId);
+      const insertAt = beforeDocTypeId ? rest.findIndex((t) => t.id === beforeDocTypeId) : -1;
+      rest.splice(insertAt === -1 ? rest.length : insertAt, 0, current);
+      return { ...p, docTypes: rest };
+    });
+    setDocTypeDrag(null);
+    setDocTypeDropPreview(null);
+  }, [updateCurrentProject, docTypeDrag, docTypeDropPreview]);
 
   const value = useMemo(
     () => ({
@@ -582,8 +765,7 @@ export function ProjectProvider({ children }) {
       requestDeleteCard,
       cancelDeleteCard,
       confirmDeleteCard,
-      addCharacterDoc,
-      addNoteDoc,
+      addDoc,
       updateDocContent,
       duplicateDoc,
       fileMenu,
@@ -593,6 +775,25 @@ export function ProjectProvider({ children }) {
       requestDeleteDoc,
       cancelDeleteDoc,
       confirmDeleteDoc,
+      docTypeModal,
+      openAddDocTypeModal,
+      openEditDocTypeModal,
+      closeDocTypeModal,
+      addDocType,
+      updateDocType,
+      docTypeMenu,
+      openDocTypeMenu,
+      closeDocTypeMenu,
+      docTypeDeleteConfirm,
+      requestDeleteDocType,
+      cancelDeleteDocType,
+      confirmDeleteDocType,
+      docTypeDrag,
+      docTypeDropPreview,
+      beginDocTypeDrag,
+      endDocTypeDrag,
+      updateDocTypeDropPreview,
+      dropDocType,
       toast,
       showToast,
     }),
@@ -644,8 +845,7 @@ export function ProjectProvider({ children }) {
       requestDeleteCard,
       cancelDeleteCard,
       confirmDeleteCard,
-      addCharacterDoc,
-      addNoteDoc,
+      addDoc,
       updateDocContent,
       duplicateDoc,
       fileMenu,
@@ -655,6 +855,25 @@ export function ProjectProvider({ children }) {
       requestDeleteDoc,
       cancelDeleteDoc,
       confirmDeleteDoc,
+      docTypeModal,
+      openAddDocTypeModal,
+      openEditDocTypeModal,
+      closeDocTypeModal,
+      addDocType,
+      updateDocType,
+      docTypeMenu,
+      openDocTypeMenu,
+      closeDocTypeMenu,
+      docTypeDeleteConfirm,
+      requestDeleteDocType,
+      cancelDeleteDocType,
+      confirmDeleteDocType,
+      docTypeDrag,
+      docTypeDropPreview,
+      beginDocTypeDrag,
+      endDocTypeDrag,
+      updateDocTypeDropPreview,
+      dropDocType,
       toast,
       showToast,
     ]

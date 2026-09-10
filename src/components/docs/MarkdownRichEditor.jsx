@@ -7,7 +7,7 @@ import { richTextPlugins } from '../../richtext/setup.js';
 // Uncontrolled by design, same as the screenplay Editor: remounts fresh
 // whenever `docId` changes (switching documents), and otherwise owns its
 // own DOM — edits flow *out* via onChange, never back in from a re-render.
-export default function MarkdownRichEditor({ docId, initialContent, onChange }) {
+export default function MarkdownRichEditor({ docId, initialContent, onChange, placeholder }) {
   const mountRef = useRef(null);
   const initialContentRef = useRef(initialContent);
   initialContentRef.current = initialContent;
@@ -15,7 +15,7 @@ export default function MarkdownRichEditor({ docId, initialContent, onChange }) 
   useEffect(() => {
     const state = EditorState.create({
       doc: parseMarkdown(initialContentRef.current),
-      plugins: richTextPlugins(),
+      plugins: richTextPlugins(placeholder),
     });
 
     const view = new EditorView(mountRef.current, {
