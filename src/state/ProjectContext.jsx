@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { createSampleProject, RECENT_PROJECT_NAMES } from './sampleData.js';
+import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES } from './sampleData.js';
+import { characterTemplate, noteTemplate } from './docTemplates.js';
 import { generateId } from '../utils/id.js';
+import { duplicateMarkdown } from '../utils/markdown.js';
 import { appendEmptyScene, emptyDoc, removeScene } from '../editor/docJson.js';
 
 const STORAGE_KEY = 'slate-writer-state';
@@ -15,40 +17,67 @@ function loadPersisted() {
   }
 }
 
+// Builds the initial `projects` map from whatever was persisted, migrating
+// the pre-multi-project shape (a single `project`) if that's what's there,
+// or seeding a fresh install with one real project plus empty-template
+// projects for the rest of the switcher list.
+function buildInitialProjects(persisted) {
+  if (persisted?.projects && typeof persisted.projects === 'object') {
+    return persisted.projects;
+  }
+  if (persisted?.project) {
+    const legacy = persisted.project;
+    const id = legacy.id ?? generateId('project');
+    return {
+      [id]: {
+        ...legacy,
+        id,
+        screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
+        characterBible: legacy.characterBible ?? [],
+        notesResearch: legacy.notesResearch ?? [],
+      },
+    };
+  }
+  const sample = createSampleProject();
+  const map = { [sample.id]: sample };
+  for (const name of SEED_PROJECT_NAMES.slice(1)) {
+    const p = createEmptyProject(name);
+    map[p.id] = p;
+  }
+  return map;
+}
+
 const ProjectContext = createContext(null);
 
 export function ProjectProvider({ children }) {
   // Read persisted state synchronously into each piece of state's lazy
   // initializer (rather than restoring it later in a useEffect) so the very
-  // first render already reflects it. Restoring it via an effect left a
-  // window, on mount, where the autosave effect below (which also runs on
-  // mount) would fire with the still-default state and immediately
-  // overwrite the just-loaded values in localStorage before React had
-  // re-rendered with the restored ones — theme (and everything else) would
-  // revert right after a reload.
+  // first render already reflects it — see the autosave effect below for
+  // why doing this later caused a revert-on-reload bug.
   const [persisted] = useState(() => loadPersisted());
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     typeof persisted?.sidebarCollapsed === 'boolean' ? persisted.sidebarCollapsed : false
   );
   const [theme, setTheme] = useState(() => (persisted?.theme === 'light' ? 'light' : 'dark'));
-  const [project, setProject] = useState(() => {
-    // Guards against state saved before `screenplayDoc` existed on the
-    // project shape (an earlier scaffold session) — everything else about
-    // the persisted shape is still compatible.
-    if (persisted?.project) {
-      return { ...persisted.project, screenplayDoc: persisted.project.screenplayDoc ?? emptyDoc() };
+  const [projects, setProjects] = useState(() => buildInitialProjects(persisted));
+  const [currentProjectId, setCurrentProjectId] = useState(() => {
+    if (persisted?.currentProjectId && projects[persisted.currentProjectId]) {
+      return persisted.currentProjectId;
     }
-    return createSampleProject();
+    return Object.keys(projects)[0];
   });
   const [lastSavedAt, setLastSavedAt] = useState(() => persisted?.lastSavedAt ?? null);
-  const [selectedProjectName, setSelectedProjectName] = useState(RECENT_PROJECT_NAMES[0]);
   const [view, setView] = useState({ name: 'outline', payload: null });
   const [dragState, setDragState] = useState(null); // { cardId, fromActId }
   const [dropPreview, setDropPreview] = useState(null); // { actId, beforeCardId }
   const [cardMenu, setCardMenu] = useState(null); // { actId, cardId, sceneId, title, x, y }
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { actId, cardId, title, x, y }
+  const [fileMenu, setFileMenu] = useState(null); // { docType, docId, title, x, y }
+  const [fileDeleteConfirm, setFileDeleteConfirm] = useState(null); // { docType, docId, title, x, y }
   const [toast, setToast] = useState(null); // { message, key }
+
+  const project = projects[currentProjectId];
 
   // Reflect the theme on the document root so the CSS `[data-theme]` tokens
   // apply everywhere, not just inside the React tree.
@@ -56,20 +85,21 @@ export function ProjectProvider({ children }) {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  // Persist whenever project, sidebar, or theme state changes (autosave).
+  // Persist whenever any project, the active project, sidebar, or theme
+  // state changes (autosave).
   useEffect(() => {
     const savedAt = Date.now();
     setLastSavedAt(savedAt);
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ project, sidebarCollapsed, theme, lastSavedAt: savedAt })
+        JSON.stringify({ projects, currentProjectId, sidebarCollapsed, theme, lastSavedAt: savedAt })
       );
     } catch {
       // localStorage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, sidebarCollapsed, theme]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -87,24 +117,50 @@ export function ProjectProvider({ children }) {
     setView({ name, payload });
   }, []);
 
+  // Every mutation to the *active* project's data goes through this one
+  // spot, so nothing else needs to know how the multi-project map is keyed.
+  const updateCurrentProject = useCallback(
+    (updater) => {
+      setProjects((prev) => ({ ...prev, [currentProjectId]: updater(prev[currentProjectId]) }));
+    },
+    [currentProjectId]
+  );
+
+  const switchProject = useCallback((projectId) => {
+    setCurrentProjectId(projectId);
+    setView({ name: 'outline', payload: null });
+  }, []);
+
+  const createProject = useCallback((name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const p = createEmptyProject(trimmed);
+    setProjects((prev) => ({ ...prev, [p.id]: p }));
+    setCurrentProjectId(p.id);
+    setView({ name: 'outline', payload: null });
+  }, []);
+
   const addAct = useCallback(() => {
-    setProject((p) => ({
+    updateCurrentProject((p) => ({
       ...p,
       acts: [...p.acts, { id: generateId('act'), title: 'New Act', cards: [] }],
     }));
-  }, []);
+  }, [updateCurrentProject]);
 
-  const renameAct = useCallback((actId, title) => {
-    setProject((p) => ({
-      ...p,
-      acts: p.acts.map((act) => (act.id === actId ? { ...act, title } : act)),
-    }));
-  }, []);
+  const renameAct = useCallback(
+    (actId, title) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        acts: p.acts.map((act) => (act.id === actId ? { ...act, title } : act)),
+      }));
+    },
+    [updateCurrentProject]
+  );
 
-  const addCard = useCallback((actId) => {
-    setProject((p) => {
+  const addCard = useCallback(
+    (actId) => {
       const sceneId = generateId('scene');
-      return {
+      updateCurrentProject((p) => ({
         ...p,
         acts: p.acts.map((act) =>
           act.id === actId
@@ -124,24 +180,31 @@ export function ProjectProvider({ children }) {
             : act
         ),
         screenplayDoc: appendEmptyScene(p.screenplayDoc, sceneId),
-      };
-    });
-  }, []);
+      }));
+    },
+    [updateCurrentProject]
+  );
 
-  const updateScreenplayDoc = useCallback((docJson) => {
-    setProject((p) => ({ ...p, screenplayDoc: docJson }));
-  }, []);
+  const updateScreenplayDoc = useCallback(
+    (docJson) => {
+      updateCurrentProject((p) => ({ ...p, screenplayDoc: docJson }));
+    },
+    [updateCurrentProject]
+  );
 
-  const updateCard = useCallback((actId, cardId, patch) => {
-    setProject((p) => ({
-      ...p,
-      acts: p.acts.map((act) =>
-        act.id === actId
-          ? { ...act, cards: act.cards.map((c) => (c.id === cardId ? { ...c, ...patch } : c)) }
-          : act
-      ),
-    }));
-  }, []);
+  const updateCard = useCallback(
+    (actId, cardId, patch) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        acts: p.acts.map((act) =>
+          act.id === actId
+            ? { ...act, cards: act.cards.map((c) => (c.id === cardId ? { ...c, ...patch } : c)) }
+            : act
+        ),
+      }));
+    },
+    [updateCurrentProject]
+  );
 
   const openCardMenu = useCallback((actId, cardId, x, y, meta) => {
     setCardMenu({ actId, cardId, x, y, sceneId: meta?.sceneId, title: meta?.title });
@@ -149,20 +212,23 @@ export function ProjectProvider({ children }) {
 
   const closeCardMenu = useCallback(() => setCardMenu(null), []);
 
-  const deleteCard = useCallback((actId, cardId) => {
-    setProject((p) => {
-      const act = p.acts.find((a) => a.id === actId);
-      const card = act?.cards.find((c) => c.id === cardId);
-      return {
-        ...p,
-        acts: p.acts.map((a) =>
-          a.id === actId ? { ...a, cards: a.cards.filter((c) => c.id !== cardId) } : a
-        ),
-        screenplayDoc: card ? removeScene(p.screenplayDoc, card.sceneId) : p.screenplayDoc,
-      };
-    });
-    setCardMenu(null);
-  }, []);
+  const deleteCard = useCallback(
+    (actId, cardId) => {
+      updateCurrentProject((p) => {
+        const act = p.acts.find((a) => a.id === actId);
+        const card = act?.cards.find((c) => c.id === cardId);
+        return {
+          ...p,
+          acts: p.acts.map((a) =>
+            a.id === actId ? { ...a, cards: a.cards.filter((c) => c.id !== cardId) } : a
+          ),
+          screenplayDoc: card ? removeScene(p.screenplayDoc, card.sceneId) : p.screenplayDoc,
+        };
+      });
+      setCardMenu(null);
+    },
+    [updateCurrentProject]
+  );
 
   // Deleting a card is permanent (it also removes the scene from the script,
   // and there's no undo) — every entry point routes through this
@@ -200,7 +266,7 @@ export function ProjectProvider({ children }) {
 
   const dropCard = useCallback(
     (toActId) => {
-      setProject((p) => {
+      updateCurrentProject((p) => {
         if (!dragState || !dropPreview) return p;
         const { cardId, fromActId } = dragState;
         const { beforeCardId } = dropPreview;
@@ -227,8 +293,79 @@ export function ProjectProvider({ children }) {
       setDragState(null);
       setDropPreview(null);
     },
-    [dragState, dropPreview]
+    [updateCurrentProject, dragState, dropPreview]
   );
+
+  // ---- Character Bible / Notes & Research docs ----
+  // `docType` is 'characterBible' | 'notesResearch' — matches the field name
+  // directly on the project object, so no translation layer is needed.
+
+  const addCharacterDoc = useCallback(() => {
+    const doc = { id: generateId('doc'), content: characterTemplate() };
+    updateCurrentProject((p) => ({ ...p, characterBible: [...p.characterBible, doc] }));
+    setView({ name: 'doc', payload: { docType: 'characterBible', docId: doc.id } });
+  }, [updateCurrentProject]);
+
+  const addNoteDoc = useCallback(() => {
+    const doc = { id: generateId('doc'), content: noteTemplate() };
+    updateCurrentProject((p) => ({ ...p, notesResearch: [...p.notesResearch, doc] }));
+    setView({ name: 'doc', payload: { docType: 'notesResearch', docId: doc.id } });
+  }, [updateCurrentProject]);
+
+  const updateDocContent = useCallback(
+    (docType, docId, content) => {
+      updateCurrentProject((p) => ({
+        ...p,
+        [docType]: p[docType].map((d) => (d.id === docId ? { ...d, content } : d)),
+      }));
+    },
+    [updateCurrentProject]
+  );
+
+  const duplicateDoc = useCallback(
+    (docType, docId) => {
+      updateCurrentProject((p) => {
+        const idx = p[docType].findIndex((d) => d.id === docId);
+        if (idx === -1) return p;
+        const copy = { id: generateId('doc'), content: duplicateMarkdown(p[docType][idx].content) };
+        const list = [...p[docType]];
+        list.splice(idx + 1, 0, copy);
+        return { ...p, [docType]: list };
+      });
+      setFileMenu(null);
+    },
+    [updateCurrentProject]
+  );
+
+  const openFileMenu = useCallback((docType, docId, x, y, title) => {
+    setFileMenu({ docType, docId, x, y, title });
+  }, []);
+
+  const closeFileMenu = useCallback(() => setFileMenu(null), []);
+
+  const deleteDoc = useCallback(
+    (docType, docId) => {
+      updateCurrentProject((p) => ({ ...p, [docType]: p[docType].filter((d) => d.id !== docId) }));
+      // If the doc being deleted is the one currently open, don't leave the
+      // user staring at an editor for a document that no longer exists.
+      setView((v) => (v.name === 'doc' && v.payload?.docId === docId ? { name: 'outline', payload: null } : v));
+    },
+    [updateCurrentProject]
+  );
+
+  const requestDeleteDoc = useCallback((docType, docId, title, x, y) => {
+    setFileMenu(null);
+    setFileDeleteConfirm({ docType, docId, title, x, y });
+  }, []);
+
+  const cancelDeleteDoc = useCallback(() => setFileDeleteConfirm(null), []);
+
+  const confirmDeleteDoc = useCallback(() => {
+    setFileDeleteConfirm((current) => {
+      if (current) deleteDoc(current.docType, current.docId);
+      return null;
+    });
+  }, [deleteDoc]);
 
   const value = useMemo(
     () => ({
@@ -237,9 +374,10 @@ export function ProjectProvider({ children }) {
       theme,
       setTheme,
       project,
-      selectedProjectName,
-      setSelectedProjectName,
-      recentProjectNames: RECENT_PROJECT_NAMES,
+      projects,
+      currentProjectId,
+      switchProject,
+      createProject,
       lastSavedAt,
       view,
       navigate,
@@ -261,6 +399,17 @@ export function ProjectProvider({ children }) {
       requestDeleteCard,
       cancelDeleteCard,
       confirmDeleteCard,
+      addCharacterDoc,
+      addNoteDoc,
+      updateDocContent,
+      duplicateDoc,
+      fileMenu,
+      openFileMenu,
+      closeFileMenu,
+      fileDeleteConfirm,
+      requestDeleteDoc,
+      cancelDeleteDoc,
+      confirmDeleteDoc,
       toast,
       showToast,
     }),
@@ -269,7 +418,10 @@ export function ProjectProvider({ children }) {
       toggleSidebar,
       theme,
       project,
-      selectedProjectName,
+      projects,
+      currentProjectId,
+      switchProject,
+      createProject,
       lastSavedAt,
       view,
       navigate,
@@ -291,6 +443,17 @@ export function ProjectProvider({ children }) {
       requestDeleteCard,
       cancelDeleteCard,
       confirmDeleteCard,
+      addCharacterDoc,
+      addNoteDoc,
+      updateDocContent,
+      duplicateDoc,
+      fileMenu,
+      openFileMenu,
+      closeFileMenu,
+      fileDeleteConfirm,
+      requestDeleteDoc,
+      cancelDeleteDoc,
+      confirmDeleteDoc,
       toast,
       showToast,
     ]

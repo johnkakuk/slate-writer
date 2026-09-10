@@ -1,4 +1,7 @@
-// Seed data for the one real project modeled in this scaffold ("Long Way Down").
+// Seed data. `createSampleProject()` is the one real project in this
+// scaffold ("Long Way Down"); `createEmptyProject()` is what every other
+// project (the rest of the switcher list, or anything created via "+ New
+// Project") gets provisioned from — a standard 3-act board and no docs yet.
 //
 // The screenplay document (`screenplayDoc`, a ProseMirror-shaped JSON tree —
 // see src/editor/schema.js) is the single source of real scene content. Each
@@ -7,9 +10,14 @@
 // the document — the anchor the Outline, Screenplay view, and Editor all
 // use to point at the same spot.
 import { generateId } from '../utils/id.js';
+import { emptyDoc } from '../editor/docJson.js';
 
 function docNode(type, id, text) {
   return { type, attrs: { id }, content: text ? [{ type: 'text', text }] : undefined };
+}
+
+function docFile(content) {
+  return { id: generateId('doc'), content };
 }
 
 // `elements[0]` is always the scene heading; it gets `sceneId` as its id so
@@ -124,6 +132,7 @@ export function createSampleProject() {
   }
 
   return {
+    id: generateId('project'),
     name: 'Long Way Down',
     acts: [
       { id: generateId('act'), title: 'ACT I', cards: [scene1.card, scene2.card] },
@@ -131,10 +140,81 @@ export function createSampleProject() {
       { id: generateId('act'), title: 'ACT III', cards: [scene6.card] },
     ],
     screenplayDoc: { type: 'doc', content: docContent },
+    characterBible: [
+      docFile(`# Mara
+
+## Physical Description
+30s. Exhausted in the specific way that comes from bracing for a conversation for weeks, not days.
+
+## Voice & Speech Patterns
+Clipped. Says less than she means, on purpose. Doesn't fill silence — makes Eli fill it instead.
+
+## Backstory
+Together with Eli long enough that the ending should have been simple. It wasn't.
+
+## Relationships
+Eli — the letter is the whole relationship, condensed. She's not at the diner to reconcile; she's there to find out if he'll finally say it.
+
+## Arc Notes
+Diner → parking lot → the car: each beat is her deciding, again, whether to stay in the scene.
+`),
+      docFile(`# Eli
+
+## Physical Description
+(TODO)
+
+## Voice & Speech Patterns
+Talks around things until he can't anymore. The voicemail in Scene 2 is the whole character in miniature.
+
+## Backstory
+Found the letter by accident, digging for batteries — the inciting incident is deliberately mundane.
+
+## Relationships
+Mara — see her file. He's driving, literally and otherwise, for most of the back half.
+
+## Arc Notes
+By the highway scene he's out of ways to avoid the conversation. That's the point of the drive.
+`),
+    ],
+    notesResearch: [
+      docFile(`# Character voice
+
+Keep Eli's dialogue indirect until the highway scene — that's where he finally says the thing plainly. Mara gets fewer lines than Eli throughout; let the silences do the work (see the parenthetical in Scene 4).
+`),
+      docFile(`# Timeline
+
+- Scene 1–2: same night, Eli's apartment
+- Scene 3: phone call, unspecified gap (hours? a day?) — decide before locking the diner scene
+- Scene 4–6: continuous, one night, diner → parking lot → highway
+`),
+    ],
   };
 }
 
-export const RECENT_PROJECT_NAMES = [
+// A brand-new project (from "+ New Project" or picking an unprovisioned name
+// from the switcher) starts with the standard 3-act structure and nothing
+// else — Character Bible and Notes & Research start empty; individual docs
+// get their own starter template when added (see docTemplates.js).
+export function createEmptyProject(name) {
+  return {
+    id: generateId('project'),
+    name,
+    acts: [
+      { id: generateId('act'), title: 'ACT I', cards: [] },
+      { id: generateId('act'), title: 'ACT II', cards: [] },
+      { id: generateId('act'), title: 'ACT III', cards: [] },
+    ],
+    screenplayDoc: emptyDoc(),
+    characterBible: [],
+    notesResearch: [],
+  };
+}
+
+// Seeds the project switcher on first run. Only "Long Way Down" (the first
+// entry) gets real content — the rest are provisioned as empty template
+// projects up front, so the switcher is backed by real, switchable projects
+// instead of decorative names.
+export const SEED_PROJECT_NAMES = [
   'Long Way Down',
   'Diner Scene — Short',
   'Highway Confession',
@@ -147,6 +227,4 @@ export const RECENT_PROJECT_NAMES = [
   'Archive — 2024 Draft',
 ];
 
-export const CHARACTER_BIBLE_FILES = ['Mara', 'Eli'];
-export const NOTES_RESEARCH_FILES = ['Character voice', 'Timeline'];
 export const TRASH_FILES = ['Draft 1 — Original', 'Draft 2 — Notes pass'];
