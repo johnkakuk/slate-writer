@@ -68,6 +68,13 @@ export default function FileTree() {
         Outline / Beats
       </button>
       <button
+        className={`nav-item${view.name === 'titlePage' ? ' active' : ''}`}
+        onClick={() => navigate('titlePage')}
+      >
+        <span className="dot" />
+        Title Page
+      </button>
+      <button
         className={`nav-item${view.name === 'screenplay' ? ' active' : ''}`}
         onClick={() => navigate('screenplay')}
       >

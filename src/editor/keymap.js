@@ -26,11 +26,28 @@ function cycleType(direction) {
 // Enter: split the block, continuing into whichever element type usually
 // follows (see ENTER_CONTINUATION) rather than always repeating the current
 // type.
+//
+// Exception: hitting Enter on a line that's already blank means "I'm done
+// with this" rather than "give me another one of these" -- otherwise
+// Character/Dialogue would keep chaining empty blocks with no way out short
+// of Tab-cycling or the slash menu. Real screenwriting software (Final
+// Draft, Arc Studio) treats a blank Enter as dropping back to Action, so an
+// empty non-Action line converts to Action in place instead of splitting.
 function smartEnter(state, dispatch) {
   const { $from, empty } = state.selection;
   if (!empty) return false;
   const node = $from.parent;
   if (!node.type.isBlock) return false;
+
+  const actionType = state.schema.nodes.action;
+  if (node.content.size === 0 && node.type !== actionType) {
+    if (dispatch) {
+      const pos = $from.before($from.depth);
+      dispatch(state.tr.setNodeMarkup(pos, actionType, node.attrs).scrollIntoView());
+    }
+    return true;
+  }
+
   const nextTypeName = ENTER_CONTINUATION[node.type.name] || node.type.name;
   const nextType = state.schema.nodes[nextTypeName];
   if (!nextType) return false;

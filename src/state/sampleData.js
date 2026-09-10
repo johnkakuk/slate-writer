@@ -19,6 +19,13 @@ function docFile(content) {
   return { id: generateId('doc'), content };
 }
 
+// A blank title page defaults its Title field to the project name so
+// there's always something sane to export even before anyone visits the
+// Title Page editor -- everything else starts empty, filled in by hand.
+export function defaultTitlePage(name) {
+  return { title: name, credit: 'Written by', author: '', basedOn: '', contact: '', draftInfo: '' };
+}
+
 // `elements[0]` is always the scene heading. `seedKey` only seeds that
 // heading's id for readability while debugging — display numbering
 // (SC. 01, etc.) is never stored on the card, it's derived live from card
@@ -105,6 +112,7 @@ export function createSampleProject() {
   return {
     id: generateId('project'),
     name: 'Long Way Down',
+    titlePage: defaultTitlePage('Long Way Down'),
     acts: [
       { id: generateId('act'), title: 'ACT I', cards: [card1, card2] },
       { id: generateId('act'), title: 'ACT II', cards: [card3, card4, card5] },
@@ -169,6 +177,7 @@ export function createEmptyProject(name) {
   return {
     id: generateId('project'),
     name,
+    titlePage: defaultTitlePage(name),
     acts: [
       { id: generateId('act'), title: 'ACT I', cards: [] },
       { id: generateId('act'), title: 'ACT II', cards: [] },

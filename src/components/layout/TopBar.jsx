@@ -2,7 +2,7 @@ import React from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 
 export default function TopBar() {
-  const { toggleSidebar, showToast, view, navigate } = useProject();
+  const { toggleSidebar, view, navigate, project } = useProject();
   const showBack = view.name === 'editor' || view.name === 'doc';
   const backTarget = view.payload?.source === 'screenplay line' ? 'screenplay' : 'outline';
 
@@ -18,9 +18,7 @@ export default function TopBar() {
           </button>
         )}
       </div>
-      <button className="export-btn" onClick={() => showToast('Export PDF isn’t wired up yet')}>
-        Export PDF
-      </button>
+      <div className="topbar-title">{project.name}</div>
     </div>
   );
 }

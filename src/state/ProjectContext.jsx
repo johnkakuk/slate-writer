@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES } from './sampleData.js';
+import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES, defaultTitlePage } from './sampleData.js';
 import { characterTemplate, noteTemplate } from './docTemplates.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
@@ -42,6 +42,14 @@ function migrateProjectToPerCardDocs(p) {
   return { ...rest, acts };
 }
 
+// Backfills `titlePage` for any project persisted before the Title Page /
+// Export PDF feature existed -- a no-op once every project has been saved
+// at least once since.
+function migrateTitlePage(p) {
+  if (p.titlePage) return p;
+  return { ...p, titlePage: defaultTitlePage(p.name) };
+}
+
 // Builds the initial `projects` map from whatever was persisted, migrating
 // the pre-multi-project shape (a single `project`) if that's what's there,
 // or seeding a fresh install with one real project plus empty-template
@@ -51,20 +59,22 @@ function migrateProjectToPerCardDocs(p) {
 function buildInitialProjects(persisted) {
   if (persisted?.projects && typeof persisted.projects === 'object') {
     return Object.fromEntries(
-      Object.entries(persisted.projects).map(([id, p]) => [id, migrateProjectToPerCardDocs(p)])
+      Object.entries(persisted.projects).map(([id, p]) => [id, migrateTitlePage(migrateProjectToPerCardDocs(p))])
     );
   }
   if (persisted?.project) {
     const legacy = persisted.project;
     const id = legacy.id ?? generateId('project');
     return {
-      [id]: migrateProjectToPerCardDocs({
-        ...legacy,
-        id,
-        screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
-        characterBible: legacy.characterBible ?? [],
-        notesResearch: legacy.notesResearch ?? [],
-      }),
+      [id]: migrateTitlePage(
+        migrateProjectToPerCardDocs({
+          ...legacy,
+          id,
+          screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
+          characterBible: legacy.characterBible ?? [],
+          notesResearch: legacy.notesResearch ?? [],
+        })
+      ),
     };
   }
   const sample = createSampleProject();
@@ -106,6 +116,8 @@ export function ProjectProvider({ children }) {
   const [dropPreview, setDropPreview] = useState(null); // { actId, beforeCardId }
   const [cardMenu, setCardMenu] = useState(null); // { actId, cardId, title, x, y }
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { actId, cardId, title, x, y }
+  const [actMenu, setActMenu] = useState(null); // { actId, title, x, y }
+  const [actDeleteConfirm, setActDeleteConfirm] = useState(null); // { actId, title, x, y }
   const [fileMenu, setFileMenu] = useState(null); // { docType, docId, title, x, y }
   const [fileDeleteConfirm, setFileDeleteConfirm] = useState(null); // { docType, docId, title, x, y }
   const [projectMenu, setProjectMenu] = useState(null); // { projectId, name, x, y }
@@ -206,6 +218,13 @@ export function ProjectProvider({ children }) {
     );
   }, []);
 
+  const updateTitlePage = useCallback(
+    (patch) => {
+      updateCurrentProject((p) => ({ ...p, titlePage: { ...p.titlePage, ...patch } }));
+    },
+    [updateCurrentProject]
+  );
+
   const openProjectMenu = useCallback((projectId, name, x, y) => {
     setProjectMenu({ projectId, name, x, y });
   }, []);
@@ -269,6 +288,35 @@ export function ProjectProvider({ children }) {
     },
     [updateCurrentProject]
   );
+
+  const openActMenu = useCallback((actId, title, x, y) => {
+    setActMenu({ actId, title, x, y });
+  }, []);
+
+  const closeActMenu = useCallback(() => setActMenu(null), []);
+
+  const deleteAct = useCallback(
+    (actId) => {
+      updateCurrentProject((p) => ({ ...p, acts: p.acts.filter((a) => a.id !== actId) }));
+    },
+    [updateCurrentProject]
+  );
+
+  // Deleting an act takes every card (and every card's scene) in it with
+  // it -- always confirm first, same as beat cards, docs, and projects.
+  const requestDeleteAct = useCallback((actId, title, x, y) => {
+    setActMenu(null);
+    setActDeleteConfirm({ actId, title, x, y });
+  }, []);
+
+  const cancelDeleteAct = useCallback(() => setActDeleteConfirm(null), []);
+
+  const confirmDeleteAct = useCallback(() => {
+    setActDeleteConfirm((current) => {
+      if (current) deleteAct(current.actId);
+      return null;
+    });
+  }, [deleteAct]);
 
   const addCard = useCallback(
     (actId) => {
@@ -498,6 +546,7 @@ export function ProjectProvider({ children }) {
       switchProject,
       createProject,
       renameProject,
+      updateTitlePage,
       projectMenu,
       openProjectMenu,
       closeProjectMenu,
@@ -510,6 +559,13 @@ export function ProjectProvider({ children }) {
       navigate,
       addAct,
       renameAct,
+      actMenu,
+      openActMenu,
+      closeActMenu,
+      actDeleteConfirm,
+      requestDeleteAct,
+      cancelDeleteAct,
+      confirmDeleteAct,
       addCard,
       updateCard,
       updateCardSceneDoc,
@@ -552,6 +608,7 @@ export function ProjectProvider({ children }) {
       switchProject,
       createProject,
       renameProject,
+      updateTitlePage,
       projectMenu,
       openProjectMenu,
       closeProjectMenu,
@@ -564,6 +621,13 @@ export function ProjectProvider({ children }) {
       navigate,
       addAct,
       renameAct,
+      actMenu,
+      openActMenu,
+      closeActMenu,
+      actDeleteConfirm,
+      requestDeleteAct,
+      cancelDeleteAct,
+      confirmDeleteAct,
       addCard,
       updateCard,
       updateCardSceneDoc,

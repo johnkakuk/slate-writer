@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { history } from 'prosemirror-history';
@@ -21,10 +21,26 @@ import { emptyDoc } from '../../editor/docJson.js';
 // different card always means a fresh mount with a different document --
 // there is no "same file" to leak edits between cards.
 export default function Editor() {
-  const { project, view, updateCardSceneDoc } = useProject();
+  const { project, view, navigate, updateCardSceneDoc } = useProject();
   const { actId, cardId } = view.payload ?? {};
   const act = project.acts.find((a) => a.id === actId);
   const card = act?.cards.find((c) => c.id === cardId);
+
+  // Every card across every act, in outline order -- the same order the
+  // Screenplay view concatenates them in -- so Next/Previous walk the beats
+  // the way they actually read, not just within the current act.
+  const flatCards = useMemo(
+    () => project.acts.flatMap((a) => a.cards.map((c) => ({ actId: a.id, cardId: c.id, title: c.title }))),
+    [project.acts]
+  );
+  const currentIndex = flatCards.findIndex((c) => c.actId === actId && c.cardId === cardId);
+  const prevCard = currentIndex > 0 ? flatCards[currentIndex - 1] : null;
+  const nextCard = currentIndex >= 0 && currentIndex < flatCards.length - 1 ? flatCards[currentIndex + 1] : null;
+
+  function goToCard(target) {
+    if (!target) return;
+    navigate('editor', { actId: target.actId, cardId: target.cardId, label: target.title, source: view.payload?.source });
+  }
 
   const mountRef = useRef(null);
   const viewRef = useRef(null);
@@ -55,11 +71,15 @@ export default function Editor() {
     // scroll to a precise spot within the scene; opening from a beat card
     // (or the pencil icon, or the context menu) just lands at the top of
     // what is now a single short scene, not a whole script to scroll through.
+    // The caret lands at the *end* of that line's text, not the start --
+    // clicking a line to jump into the Editor reads as "let me keep writing
+    // from here," which is where a screenwriter's cursor would already be.
     const blockId = initialTargetRef.current?.blockId;
     if (blockId) {
       const found = findBlockById(editorView.state.doc, blockId);
       if (found) {
-        const sel = TextSelection.near(editorView.state.doc.resolve(found.pos + 1));
+        const endPos = found.pos + 1 + found.node.content.size;
+        const sel = TextSelection.near(editorView.state.doc.resolve(endPos), -1);
         editorView.dispatch(editorView.state.tr.setSelection(sel).scrollIntoView());
       }
     }
@@ -87,9 +107,29 @@ export default function Editor() {
     <div className="editor-shell">
       <div className="editor-scroll">
         <div className="screenplay-head">
-          <div className="board-title">{card.title}</div>
-          <div className="board-sub">
-            {target?.source ? `Opened from ${target.source}` : 'Tab or “/” to change an element’s type.'}
+          <div>
+            <div className="board-title">{card.title}</div>
+            <div className="board-sub">
+              {target?.source ? `Opened from ${target.source}` : 'Tab or “/” to change an element’s type.'}
+            </div>
+          </div>
+          <div className="editor-beat-nav">
+            <button
+              className="editor-beat-nav-btn"
+              disabled={!prevCard}
+              title={prevCard ? `Previous: ${prevCard.title}` : 'This is the first beat'}
+              onClick={() => goToCard(prevCard)}
+            >
+              ‹ Previous
+            </button>
+            <button
+              className="editor-beat-nav-btn"
+              disabled={!nextCard}
+              title={nextCard ? `Next: ${nextCard.title}` : 'This is the last beat'}
+              onClick={() => goToCard(nextCard)}
+            >
+              Next ›
+            </button>
           </div>
         </div>
         <div className="screenplay-page editor-page" ref={mountRef} />

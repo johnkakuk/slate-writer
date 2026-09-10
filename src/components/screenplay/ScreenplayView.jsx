@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import { ELEMENT_TYPE_BY_NAME } from '../../editor/elementTypes.js';
+import { exportScreenplayPdf } from '../../export/screenplayPdf.js';
 
 function nodeText(node) {
   return (node.content ?? []).map((c) => c.text ?? '').join('');
@@ -13,7 +14,8 @@ function nodeText(node) {
 // reordering, editing, adding, or deleting a card is reflected here
 // immediately just by virtue of reading the same live state.
 export default function ScreenplayView() {
-  const { project, navigate } = useProject();
+  const { project, navigate, showToast } = useProject();
+  const [exporting, setExporting] = useState(false);
 
   function handleLineClick(act, card, node) {
     navigate('editor', {
@@ -25,11 +27,32 @@ export default function ScreenplayView() {
     });
   }
 
+  async function handleExport() {
+    setExporting(true);
+    try {
+      // Yield a frame so the "Exporting…" label actually paints before the
+      // (synchronous) PDF build work blocks the thread.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      exportScreenplayPdf(project);
+      showToast(`Exported “${project.name}.pdf”`);
+    } catch (err) {
+      console.error(err);
+      showToast('Export failed — see console for details');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="screenplay">
       <div className="screenplay-head">
-        <div className="board-title">Screenplay — {project.name}</div>
-        <div className="board-sub">Read-only. Click any line to open it in the Editor.</div>
+        <div>
+          <div className="board-title">Screenplay</div>
+          <div className="board-sub">Read-only. Click any line to open it in the Editor.</div>
+        </div>
+        <button className="export-btn" onClick={handleExport} disabled={exporting}>
+          {exporting ? 'Exporting…' : 'Export PDF'}
+        </button>
       </div>
       <div className="screenplay-scroll">
         <div className="screenplay-page">

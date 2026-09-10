@@ -12,6 +12,7 @@
     "@capacitor/cli": "^6.2.2",
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
+    "jspdf": "^4.2.1",
     "prosemirror-commands": "^1.7.2",
     "prosemirror-dropcursor": "^1.8.3",
     "prosemirror-example-setup": "^1.2.3",
