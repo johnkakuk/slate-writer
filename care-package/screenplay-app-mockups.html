@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slate Writer — Outline</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; min-height: 100vh;
+    background: #14161a;
+    color: #e8e6e1;
+    font-family: 'Courier New', Courier, monospace;
+  }
+
+  .app { display: flex; min-height: 100vh; }
+
+  /* ---------------- Sidebar ---------------- */
+  .sidebar {
+    width: 250px; flex-shrink: 0;
+    border-right: 1px solid #2a2d34;
+    overflow: hidden;
+    transition: width 0.2s ease, border-color 0.2s ease;
+  }
+  .sidebar.collapsed { width: 0; border-right-color: transparent; }
+  .sidebar-content {
+    width: 250px; height: 100%;
+    background: #101216;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-h {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 8px 10px 14px; border-bottom: 1px solid #2a2d34;
+    font-size: 12px; font-weight: 700; color: #e8e6e1; letter-spacing: 0.01em;
+  }
+  .sidebar-h span { color: #5b8c7b; }
+  .collapse-btn {
+    background: transparent; border: none; color: #8a8d94; cursor: pointer;
+    font-size: 13px; padding: 5px 9px; border-radius: 4px; font-weight: 600;
+  }
+  .collapse-btn:hover { background: #1e2127; color: #e8e6e1; }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 5px;
+    font-size: 12px; color: #a8ada8;
+  }
+  .nav-item.active { background: #1e2127; color: #e8e6e1; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: #4a4d54; flex-shrink: 0; }
+  .nav-item.active .dot { background: #5b8c7b; }
+  .nav-settings { padding: 10px 8px; border-top: 1px solid #2a2d34; margin-top: auto; }
+
+  .project { border-bottom: 1px solid #2a2d34; padding: 4px 8px 6px; }
+  .project-trigger {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; margin-top: 6px;
+    background: #1e2127; border: 1px solid #2f333a; border-radius: 6px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12.5px; font-weight: 700; color: #e8e6e1; cursor: pointer;
+  }
+  .project-chevron { color: #8a8d94; font-size: 10px; transition: transform 0.15s ease; }
+  .project.open .project-chevron { transform: rotate(180deg); }
+  .project-dropdown {
+    display: none; margin-top: 6px;
+    background: #17191e; border: 1px solid #2f333a; border-radius: 6px;
+    overflow: hidden;
+  }
+  .project.open .project-dropdown { display: block; }
+  .project-search {
+    width: 100%; box-sizing: border-box;
+    padding: 8px 10px; font-size: 11.5px;
+    font-family: 'Courier New', Courier, monospace;
+    background: #101216; border: none; border-bottom: 1px solid #2a2d34;
+    color: #e8e6e1; outline: none;
+  }
+  .project-search::placeholder { color: #6b6f77; }
+  .project-list { max-height: 220px; overflow-y: auto; }
+  .project-item { padding: 7px 10px; font-size: 11.5px; color: #a8ada8; border-bottom: 1px solid #202329; }
+  .project-item:last-child { border-bottom: none; }
+  .project-item.active { color: #5b8c7b; font-weight: 700; }
+
+  .files { padding: 12px 8px; flex: 1; overflow-y: auto; }
+  .files-h {
+    font-size: 9.5px; color: #6b6f77; letter-spacing: 0.06em; padding: 4px 10px 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .folder { font-size: 12px; color: #c4c2bc; padding: 6px 10px; display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  .folder-icon { color: #d9a441; display: inline-block; width: 8px; }
+  .folder-children { display: block; }
+  .file { font-size: 12px; color: #9a9e9c; padding: 6px 10px 6px 28px; display: flex; align-items: center; justify-content: space-between; }
+  .file.active { color: #e8e6e1; background: #1a2320; border-radius: 4px; }
+  .file .file-badge { font-size: 9px; color: #5b8c7b; }
+  .sidebar-foot { padding: 10px 14px; border-top: 1px solid #2a2d34; font-size: 10.5px; color: #6b6f77; }
+
+  /* ---------------- Main ---------------- */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid #2a2d34; background: #17191e;
+    min-height: 47px;
+  }
+  .reopen-btn {
+    display: none; align-items: center; justify-content: center;
+    width: 26px; height: 26px; border-radius: 5px;
+    background: transparent; border: 1px solid #2f333a; color: #8a8d94; cursor: pointer;
+    font-size: 12px;
+  }
+  .app.sidebar-collapsed .reopen-btn { display: flex; }
+  .export-btn {
+    font-size: 11px; padding: 7px 12px; margin-left: auto;
+    background: #5b8c7b; color: #0e1310; border: none; border-radius: 5px; font-weight: 600; cursor: pointer;
+  }
+
+  /* ---------------- Outline board ---------------- */
+  .board { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .board-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 16px 12px;
+  }
+  .board-title { font-size: 13px; font-weight: 700; color: #e8e6e1; }
+  .board-sub { font-size: 11px; color: #8a8d94; margin-top: 3px; }
+
+  .board-columns {
+    flex: 1; display: flex; align-items: flex-start; gap: 14px;
+    padding: 0 16px 20px; overflow-x: auto; min-height: 0;
+  }
+  .board-col {
+    width: 260px; flex-shrink: 0;
+    background: #17191e; border: 1px solid #2a2d34; border-radius: 10px;
+    display: flex; flex-direction: column; max-height: 100%;
+  }
+  .board-col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; border-bottom: 1px solid #2a2d34;
+  }
+  .board-col-title {
+    font-size: 11.5px; font-weight: 700; color: #d8d6d1; letter-spacing: 0.03em;
+    outline: none; border-radius: 3px; padding: 2px 4px;
+  }
+  .board-col-title:focus { background: #1e2127; }
+  .board-col-count { font-size: 10px; color: #6b6f77; background: #101216; padding: 2px 7px; border-radius: 10px; }
+
+  .board-col-cards { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 40px; }
+
+  .beat-card {
+    background: #1e2127; border: 1px solid #2f333a; border-radius: 8px;
+    padding: 12px; cursor: grab;
+  }
+  .beat-card:active { cursor: grabbing; }
+  .beat-card.dragging { opacity: 0.35; }
+  .beat-card.current { border-color: #5b8c7b; background: #1a2320; }
+  .beat-card-num { font-size: 9.5px; color: #5b8c7b; font-weight: 700; margin-bottom: 6px; letter-spacing: 0.03em; }
+  .beat-card-title { font-size: 13px; color: #f0efe9; font-weight: 700; margin-bottom: 6px; line-height: 1.35; }
+  .beat-card-desc { font-size: 11px; color: #9a9e9c; line-height: 1.5; }
+
+  .drop-indicator {
+    height: 3px; border-radius: 2px;
+    background: #5b8c7b;
+    box-shadow: 0 0 0 3px rgba(91,140,123,0.18);
+  }
+
+  .board-col-add {
+    margin: 0 10px 10px; padding: 8px; text-align: left;
+    background: transparent; border: 1px dashed #2f333a; border-radius: 6px;
+    color: #6b6f77; font-size: 11.5px; font-family: 'Courier New', Courier, monospace; cursor: pointer;
+  }
+  .board-col-add:hover { color: #a8ada8; border-color: #3f434a; }
+
+  .board-add-col {
+    width: 200px; flex-shrink: 0; align-self: flex-start;
+    padding: 12px; margin-top: 2px;
+    background: transparent; border: 1px dashed #2a2d34; border-radius: 10px;
+    color: #6b6f77; font-size: 12px; font-family: 'Courier New', Courier, monospace; cursor: pointer;
+  }
+  .board-add-col:hover { color: #a8ada8; border-color: #3f434a; }
+
+  /* ---------------- Screenplay (read-only) ---------------- */
+  .screenplay { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .screenplay-head { padding: 16px 16px 12px; }
+  .screenplay-scroll { flex: 1; overflow-y: auto; padding: 0 16px 40px; }
+  .screenplay-page {
+    max-width: 560px; margin: 0 auto;
+    background: #fffdf6; color: #1c1a14;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25);
+    padding: 40px 44px 60px;
+    font-size: 12.5px; line-height: 1.75;
+  }
+  .sp-block { cursor: pointer; border-radius: 3px; padding: 1px 4px; margin: 0 -4px; transition: background 0.1s ease; }
+  .sp-block:hover { background: rgba(91,140,123,0.12); }
+  .sp-scene { font-weight: 700; margin: 16px 0 10px; }
+  .sp-scene:first-child { margin-top: 0; }
+  .sp-action { margin-bottom: 12px; color: #2a271c; }
+  .sp-char { text-align: center; font-weight: 700; margin-bottom: 2px; }
+  .sp-dial { max-width: 62%; margin: 0 auto 12px; text-align: left; }
+
+  /* ---------------- Toast ---------------- */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(12px);
+    background: #1e2127; border: 1px solid #5b8c7b; color: #e8e6e1;
+    font-size: 12px; padding: 10px 16px; border-radius: 7px;
+    opacity: 0; pointer-events: none; transition: opacity 0.18s ease, transform 0.18s ease;
+    z-index: 100; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-content">
+      <div class="sidebar-h">
+        <span>Slate<span> Writer</span></span>
+        <button class="collapse-btn" onclick="toggleMenu()" title="Collapse menu">‹</button>
+      </div>
+
+      <div class="project">
+        <button class="project-trigger" onclick="toggleProjectMenu()">
+          <span>Long Way Down</span>
+          <span class="project-chevron">▾</span>
+        </button>
+        <div class="project-dropdown">
+          <input class="project-search" type="text" placeholder="Search projects…">
+          <div class="project-list">
+            <div class="project-item active">Long Way Down</div>
+            <div class="project-item">Diner Scene — Short</div>
+            <div class="project-item">Highway Confession</div>
+            <div class="project-item">The Rewrite Room — Pilot</div>
+            <div class="project-item">Untitled Feature Draft</div>
+            <div class="project-item">Spec Script — Half Hour</div>
+            <div class="project-item">Adaptation — Working Title</div>
+            <div class="project-item">Table Read Notes</div>
+            <div class="project-item">Old Pilot Draft</div>
+            <div class="project-item">Archive — 2024 Draft</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="files">
+        <div class="files-h"><span>LONG WAY DOWN</span><span>+</span></div>
+        <div class="nav-item active" onclick="showView('board', this)"><span class="dot"></span>Outline / Beats</div>
+        <div class="nav-item" onclick="showView('screenplay', this)"><span class="dot"></span>Screenplay</div>
+
+        <div class="folder" onclick="toggleFolder(this)"><span class="folder-icon">▾</span>Character Bible</div>
+        <div class="folder-children">
+          <div class="file">Mara</div>
+          <div class="file">Eli</div>
+        </div>
+
+        <div class="folder" onclick="toggleFolder(this)"><span class="folder-icon">▾</span>Notes &amp; Research</div>
+        <div class="folder-children">
+          <div class="file">Character voice</div>
+          <div class="file">Timeline</div>
+        </div>
+
+        <div class="folder collapsed" onclick="toggleFolder(this)"><span class="folder-icon">▸</span>Trash</div>
+        <div class="folder-children" style="display:none;">
+          <div class="file">Draft 1 — Original</div>
+          <div class="file">Draft 2 — Notes pass</div>
+        </div>
+      </div>
+
+      <div class="nav-settings">
+        <div class="nav-item"><span class="dot"></span>Settings</div>
+      </div>
+      <div class="sidebar-foot">Autosaved 2 min ago</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="reopen-btn" onclick="toggleMenu()" title="Show menu">›</button>
+      <button class="export-btn">Export PDF</button>
+    </div>
+
+    <div class="board" id="boardView">
+      <div class="board-head">
+        <div>
+          <div class="board-title">Outline — Long Way Down</div>
+          <div class="board-sub">Drag cards to reorder or move between acts</div>
+        </div>
+      </div>
+
+      <div class="board-columns" id="boardColumns">
+        <div class="board-col">
+          <div class="board-col-head">
+            <span class="board-col-title" contenteditable="true" spellcheck="false">ACT I</span>
+            <span class="board-col-count">2</span>
+          </div>
+          <div class="board-col-cards" ondragover="allowDrop(event)" ondrop="dropCard(event)">
+            <div class="beat-card" draggable="true" ondragstart="dragCard(event)" ondragend="dragEndCard(event)" ondblclick="openEditorFromCard(this)">
+              <div class="beat-card-num">SC. 01</div>
+              <div class="beat-card-title">Eli Finds the Letter</div>
+              <div class="beat-card-desc">Looking for batteries in the junk drawer, he finds something else entirely.</div>
+            </div>
+            <div class="beat-card" draggable="true" ondragstart="dragCard(event)" ondragend="dragEndCard(event)" ondblclick="openEditorFromCard(this)">
+              <div class="beat-card-num">SC. 02</div>
+              <div class="beat-card-title">He Calls Mara</div>
+              <div class="beat-card-desc">She doesn't pick up. He leaves a voicemail he immediately regrets.</div>
+            </div>
+          </div>
+          <button class="board-col-add" onclick="addCard(this)">+ add card</button>
+        </div>
+
+        <div class="board-col">
+          <div class="board-col-head">
+            <span class="board-col-title" contenteditable="true" spellcheck="false">ACT II</span>
+            <span class="board-col-count">3</span>
+          </div>
+          <div class="board-col-cards" ondragover="allowDrop(event)" ondrop="dropCard(event)">
+            <div class="beat-card" draggable="true" ondragstart="dragCard(event)" ondragend="dragEndCard(event)" ondblclick="openEditorFromCard(this)">
+              <div class="beat-card-num">SC. 03</div>
+              <div class="beat-card-title">Setting the Meeting</div>
+              <div class="beat-card-desc">She agrees to talk — but only at the diner, and only for twenty minutes.</div>
+            </div>
+            <div class="beat-card current" draggable="true" ondragstart="dragCard(event)" ondragend="dragEndCard(event)" ondblclick="openEditorFromCard(this)">
+              <div class="beat-card-num">SC. 04 · CURRENT</div>
+              <div class="beat-card-title">Diner Confrontation</div>
+              <div class="beat-card-desc">Rain outside, coffee going cold. He finally shows her the letter.</div>
+            </div>
+            <div class="beat-card" draggable="true" ondragstart="dragCard(event)" ondragend="dragEndCard(event)" ondblclick="openEditorFromCard(this)">
+              <div class="beat-card-num">SC. 05</div>
+              <div class="beat-card-title">Parking Lot Standoff</div>
+              <div class="beat-card-desc">She won't get in the car. He won't leave without her.</div>
+            </div>
+          </div>
+          <button class="board-col-add" onclick="addCard(this)">+ add card</button>
+        </div>
+
+        <div class="board-col">
+          <div class="board-col-head">
+            <span class="board-col-title" contenteditable="true" spellcheck="false">ACT III</span>
+            <span class="board-col-count">1</span>
+          </div>
+          <div class="board-col-cards" ondragover="allowDrop(event)" ondrop="dropCard(event)">
+            <div class="beat-card" draggable="true" ondragstart="dragCard(event)" ondragend="dragEndCard(event)" ondblclick="openEditorFromCard(this)">
+              <div class="beat-card-num">SC. 06</div>
+              <div class="beat-card-title">Highway Confession</div>
+              <div class="beat-card-desc">Twelve silent miles, then everything comes out at once.</div>
+            </div>
+          </div>
+          <button class="board-col-add" onclick="addCard(this)">+ add card</button>
+        </div>
+
+        <button class="board-add-col" id="addColBtn" onclick="addColumn()">+ add act</button>
+      </div>
+    </div>
+
+    <div class="screenplay" id="screenplayView" style="display:none;">
+      <div class="screenplay-head">
+        <div class="board-title">Screenplay — Long Way Down</div>
+        <div class="board-sub">Read-only. Click any line to open it in the Editor.</div>
+      </div>
+      <div class="screenplay-scroll">
+        <div class="screenplay-page">
+          <div class="sp-block sp-scene" onclick="openEditor('Eli Finds the Letter')">INT. ELI'S APARTMENT — NIGHT</div>
+          <div class="sp-block sp-action" onclick="openEditor('Eli Finds the Letter')">Eli digs through a junk drawer. Batteries, dead pens, a broken watch. His hand stops on something else — an envelope, unopened, addressed in handwriting he knows too well.</div>
+
+          <div class="sp-block sp-scene" onclick="openEditor('He Calls Mara')">INT. ELI'S APARTMENT — CONTINUOUS</div>
+          <div class="sp-block sp-action" onclick="openEditor('He Calls Mara')">He dials. It rings out. The beep comes too fast.</div>
+          <div class="sp-block sp-char" onclick="openEditor('He Calls Mara')">ELI</div>
+          <div class="sp-block sp-dial" onclick="openEditor('He Calls Mara')">Hey, it's — obviously it's me. Call me back. Please.</div>
+
+          <div class="sp-block sp-scene" onclick="openEditor('Diner Confrontation')">INT. DINER — NIGHT</div>
+          <div class="sp-block sp-action" onclick="openEditor('Diner Confrontation')">Rain streaks the window. MARA (30s, exhausted) turns a coffee cup in slow circles. Across from her, ELI watches, waiting.</div>
+          <div class="sp-block sp-char" onclick="openEditor('Diner Confrontation')">ELI</div>
+          <div class="sp-block sp-dial" onclick="openEditor('Diner Confrontation')">You're not going to say anything?</div>
+          <div class="sp-block sp-char" onclick="openEditor('Diner Confrontation')">MARA</div>
+          <div class="sp-block sp-dial" onclick="openEditor('Diner Confrontation')">What's left to say.</div>
+
+          <div class="sp-block sp-scene" onclick="openEditor('Parking Lot Standoff')">EXT. DINER PARKING LOT — CONTINUOUS</div>
+          <div class="sp-block sp-action" onclick="openEditor('Parking Lot Standoff')">Rain picks up. Mara stands by the passenger door, arms crossed. Eli waits at the driver's side, keys in hand.</div>
+          <div class="sp-block sp-char" onclick="openEditor('Parking Lot Standoff')">MARA</div>
+          <div class="sp-block sp-dial" onclick="openEditor('Parking Lot Standoff')">I'm not getting in that car until you tell me the truth.</div>
+
+          <div class="sp-block sp-scene" onclick="openEditor('Highway Confession')">INT. CAR — HIGHWAY — NIGHT</div>
+          <div class="sp-block sp-action" onclick="openEditor('Highway Confession')">Twelve miles of silence. Headlights sweep the dashboard. Finally, Eli speaks without looking over.</div>
+          <div class="sp-block sp-char" onclick="openEditor('Highway Confession')">ELI</div>
+          <div class="sp-block sp-dial" onclick="openEditor('Highway Confession')">It wasn't supposed to happen like this.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  function toggleMenu() {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+    document.getElementById('app').classList.toggle('sidebar-collapsed');
+  }
+
+  function toggleProjectMenu() {
+    document.querySelector('.project').classList.toggle('open');
+  }
+
+  function showView(view, navEl) {
+    document.getElementById('boardView').style.display = view === 'board' ? 'flex' : 'none';
+    document.getElementById('screenplayView').style.display = view === 'screenplay' ? 'flex' : 'none';
+    document.querySelectorAll('.files .nav-item').forEach(el => el.classList.remove('active'));
+    navEl.classList.add('active');
+  }
+
+  function showToast(text) {
+    const toast = document.getElementById('toast');
+    toast.textContent = text;
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), 1800);
+  }
+
+  function openEditor(sceneLabel) {
+    // NOTE FOR BUILD: this should open the Editor screen scrolled to the
+    // exact line for this scene, not just the file. Placeholder for now.
+    showToast('Opening Editor → ' + sceneLabel);
+  }
+
+  function openEditorFromCard(card) {
+    const title = card.querySelector('.beat-card-title').textContent;
+    openEditor(title);
+  }
+
+  function toggleFolder(el) {
+    const children = el.nextElementSibling;
+    const collapsed = el.classList.toggle('collapsed');
+    el.querySelector('.folder-icon').textContent = collapsed ? '▸' : '▾';
+    children.style.display = collapsed ? 'none' : 'block';
+  }
+
+  // ---- Drag and drop (native HTML5 DnD, no library) ----
+  let dragged = null;
+  let indicator = null;
+
+  function dragCard(e) {
+    dragged = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => dragged.classList.add('dragging'), 0);
+    indicator = document.createElement('div');
+    indicator.className = 'drop-indicator';
+  }
+
+  function dragEndCard(e) {
+    e.currentTarget.classList.remove('dragging');
+    if (indicator && indicator.parentNode) indicator.parentNode.removeChild(indicator);
+    dragged = null;
+    indicator = null;
+  }
+
+  function allowDrop(e) {
+    e.preventDefault();
+    if (!dragged || !indicator) return;
+    const container = e.currentTarget;
+    const after = getDragAfterElement(container, e.clientY);
+    if (after == null) {
+      container.appendChild(indicator);
+    } else {
+      container.insertBefore(indicator, after);
+    }
+  }
+
+  function dropCard(e) {
+    e.preventDefault();
+    if (!dragged || !indicator || !indicator.parentNode) return;
+    indicator.parentNode.insertBefore(dragged, indicator);
+    indicator.remove();
+  }
+
+  function getDragAfterElement(container, y) {
+    const cards = [...container.querySelectorAll('.beat-card:not(.dragging)')];
+    return cards.reduce((closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, element: child };
+      } else {
+        return closest;
+      }
+    }, { offset: -Infinity }).element;
+  }
+
+  function addCard(btn) {
+    const container = btn.previousElementSibling;
+    const card = document.createElement('div');
+    card.className = 'beat-card';
+    card.draggable = true;
+    card.addEventListener('dragstart', dragCard);
+    card.addEventListener('dragend', dragEndCard);
+    card.addEventListener('dblclick', function () { openEditorFromCard(card); });
+    card.innerHTML = '<div class="beat-card-num">NEW</div><div class="beat-card-title">Untitled beat</div><div class="beat-card-desc">Click to describe what happens here.</div>';
+    container.appendChild(card);
+  }
+
+  function addColumn() {
+    const columns = document.getElementById('boardColumns');
+    const addBtn = document.getElementById('addColBtn');
+    const col = document.createElement('div');
+    col.className = 'board-col';
+    col.innerHTML = `
+      <div class="board-col-head">
+        <span class="board-col-title" contenteditable="true" spellcheck="false">New Act</span>
+        <span class="board-col-count">0</span>
+      </div>
+      <div class="board-col-cards"></div>
+      <button class="board-col-add">+ add card</button>
+    `;
+    columns.insertBefore(col, addBtn);
+    col.querySelector('.board-col-cards').addEventListener('dragover', allowDrop);
+    col.querySelector('.board-col-cards').addEventListener('drop', dropCard);
+    col.querySelector('.board-col-add').addEventListener('click', function () { addCard(this); });
+  }
+</script>
+
+</body>
+</html>
