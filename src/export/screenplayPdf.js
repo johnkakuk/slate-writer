@@ -129,6 +129,7 @@ export function buildScreenplayPdf(project) {
 
   function drawPageNumberIfNeeded() {
     if (scriptPage < 2) return;
+    doc.setFont('courier', 'normal');
     doc.text(`${scriptPage}.`, RIGHT_EDGE, MARGIN_TOP * 0.6, { align: 'right' });
   }
   drawPageNumberIfNeeded();
@@ -167,17 +168,26 @@ export function buildScreenplayPdf(project) {
     // whether this one fits.
     if (gluedToNext) neededHeight += LINE_HEIGHT;
 
-    // Elements are never split mid-block across a page break -- if it
-    // doesn't fit, the whole thing (blank lines included) moves to the next
-    // page, which also means no floating blank space stranded at a page top.
+    // Elements are normally never split mid-block across a page break -- if
+    // one doesn't fit, the whole thing (blank lines included) moves to the
+    // next page, which also means no floating blank space stranded at a
+    // page top. The one exception is a block too long to ever fit on a
+    // single page by itself (an uninterrupted action paragraph or a long
+    // monologue) -- the per-line check below still paginates it rather than
+    // looping forever trying to find room that doesn't exist.
     if (y + neededHeight > PAGE_H - MARGIN_BOTTOM) {
       newPage();
     } else {
       y += blanks * LINE_HEIGHT;
     }
 
-    doc.setFont('courier', BOLD_TYPES.has(type) ? 'bold' : 'normal');
+    const font = BOLD_TYPES.has(type) ? 'bold' : 'normal';
+    doc.setFont('courier', font);
     for (const line of lines) {
+      if (y + LINE_HEIGHT > PAGE_H - MARGIN_BOTTOM) {
+        newPage();
+        doc.setFont('courier', font); // newPage()'s page number draws in normal weight
+      }
       if (type === 'transition') {
         doc.text(line, layout.right, y, { align: 'right' });
       } else {
