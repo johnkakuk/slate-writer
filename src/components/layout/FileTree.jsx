@@ -1,32 +1,36 @@
 import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
-import { CHARACTER_BIBLE_FILES, NOTES_RESEARCH_FILES, TRASH_FILES } from '../../state/sampleData.js';
+import { titleFromMarkdown } from '../../utils/markdown.js';
 
-const FOLDERS = [
-  { key: 'character-bible', label: 'Character Bible', files: CHARACTER_BIBLE_FILES, defaultOpen: true },
-  { key: 'notes-research', label: 'Notes & Research', files: NOTES_RESEARCH_FILES, defaultOpen: true },
-  { key: 'trash', label: 'Trash', files: TRASH_FILES, defaultOpen: false },
-];
-
-function Folder({ folder, activeFile, onFileClick }) {
-  const [open, setOpen] = useState(folder.defaultOpen);
+function DocFolder({ label, docs, docType, activeDocId, defaultOpen, onAdd, onFileClick, onFileContextMenu }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <>
-      <button className="folder" onClick={() => setOpen((o) => !o)}>
-        <span className="folder-icon">{open ? '▾' : '▸'}</span>
-        {folder.label}
-      </button>
+      <div className="folder-row">
+        <button className="folder" onClick={() => setOpen((o) => !o)}>
+          <span className="folder-icon">{open ? '▾' : '▸'}</span>
+          {label}
+        </button>
+        <button className="folder-add" onClick={onAdd} title={`New ${label.toLowerCase()} file`}>
+          +
+        </button>
+      </div>
       {open && (
         <div className="folder-children">
-          {folder.files.map((file) => (
-            <button
-              key={file}
-              className={`file${activeFile === `${folder.key}:${file}` ? ' active' : ''}`}
-              onClick={() => onFileClick(folder.key, file)}
-            >
-              {file}
-            </button>
-          ))}
+          {docs.map((doc) => {
+            const title = titleFromMarkdown(doc.content, 'Untitled');
+            return (
+              <button
+                key={doc.id}
+                className={`file${activeDocId === doc.id ? ' active' : ''}`}
+                onClick={() => onFileClick(docType, doc.id)}
+                onContextMenu={(e) => onFileContextMenu(e, docType, doc.id, title)}
+              >
+                {title}
+              </button>
+            );
+          })}
+          {docs.length === 0 && <div className="folder-empty">No files yet.</div>}
         </div>
       )}
     </>
@@ -34,11 +38,17 @@ function Folder({ folder, activeFile, onFileClick }) {
 }
 
 export default function FileTree() {
-  const { project, view, navigate, showToast } = useProject();
-  const activeFile = view.name === 'stub' ? view.payload?.fileKey : null;
+  const { project, view, navigate, addCharacterDoc, addNoteDoc, openFileMenu, showToast } = useProject();
+  const activeDocId = view.name === 'doc' ? view.payload?.docId : null;
+  const activeDocType = view.name === 'doc' ? view.payload?.docType : null;
 
-  function handleFileClick(folderKey, file) {
-    navigate('stub', { label: file, fileKey: `${folderKey}:${file}` });
+  function handleFileClick(docType, docId) {
+    navigate('doc', { docType, docId });
+  }
+
+  function handleFileContextMenu(e, docType, docId, title) {
+    e.preventDefault();
+    openFileMenu(docType, docId, e.clientX, e.clientY, title);
   }
 
   return (
@@ -58,6 +68,13 @@ export default function FileTree() {
         Outline / Beats
       </button>
       <button
+        className={`nav-item${view.name === 'titlePage' ? ' active' : ''}`}
+        onClick={() => navigate('titlePage')}
+      >
+        <span className="dot" />
+        Title Page
+      </button>
+      <button
         className={`nav-item${view.name === 'screenplay' ? ' active' : ''}`}
         onClick={() => navigate('screenplay')}
       >
@@ -65,9 +82,26 @@ export default function FileTree() {
         Screenplay
       </button>
 
-      {FOLDERS.map((folder) => (
-        <Folder key={folder.key} folder={folder} activeFile={activeFile} onFileClick={handleFileClick} />
-      ))}
+      <DocFolder
+        label="Character Bible"
+        docs={project.characterBible}
+        docType="characterBible"
+        activeDocId={activeDocType === 'characterBible' ? activeDocId : null}
+        defaultOpen
+        onAdd={addCharacterDoc}
+        onFileClick={handleFileClick}
+        onFileContextMenu={handleFileContextMenu}
+      />
+      <DocFolder
+        label="Notes & Research"
+        docs={project.notesResearch}
+        docType="notesResearch"
+        activeDocId={activeDocType === 'notesResearch' ? activeDocId : null}
+        defaultOpen
+        onAdd={addNoteDoc}
+        onFileClick={handleFileClick}
+        onFileContextMenu={handleFileContextMenu}
+      />
     </div>
   );
 }

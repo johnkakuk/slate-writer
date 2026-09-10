@@ -3,6 +3,8 @@ import { useProject } from '../../state/ProjectContext.jsx';
 import Column from './Column.jsx';
 import CardContextMenu from './CardContextMenu.jsx';
 import DeleteConfirmPopover from './DeleteConfirmPopover.jsx';
+import ActContextMenu from './ActContextMenu.jsx';
+import ActDeleteConfirmPopover from './ActDeleteConfirmPopover.jsx';
 
 export default function OutlineBoard() {
   const { project, addAct } = useProject();
@@ -25,7 +27,7 @@ export default function OutlineBoard() {
     <div className="board">
       <div className="board-head">
         <div>
-          <div className="board-title">Outline — {project.name}</div>
+          <div className="board-title">Outline</div>
           <div className="board-sub">Drag cards to reorder or move between acts</div>
         </div>
       </div>
@@ -40,6 +42,8 @@ export default function OutlineBoard() {
       </div>
       <CardContextMenu />
       <DeleteConfirmPopover />
+      <ActContextMenu />
+      <ActDeleteConfirmPopover />
     </div>
   );
 }

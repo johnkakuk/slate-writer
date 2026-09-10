@@ -1,44 +1,80 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import { ELEMENT_TYPE_BY_NAME } from '../../editor/elementTypes.js';
+import { exportScreenplayPdf } from '../../export/screenplayPdf.js';
 
 function nodeText(node) {
   return (node.content ?? []).map((c) => c.text ?? '').join('');
 }
 
-// Renders the live screenplay document read-only — this *is* the document
-// the Editor edits (src/state/ProjectContext.jsx `project.screenplayDoc`),
-// not a separate derived copy, so there's nothing to keep in sync.
+// Renders a live concatenation of every beat card's own sceneDoc, in
+// current outline order (acts, then cards within each act) -- computed
+// fresh on every render directly from `project.acts`, not from a separately
+// stored/derived document. That means there's nothing to keep in sync:
+// reordering, editing, adding, or deleting a card is reflected here
+// immediately just by virtue of reading the same live state.
 export default function ScreenplayView() {
-  const { project, navigate } = useProject();
-  const nodes = project.screenplayDoc?.content ?? [];
+  const { project, navigate, showToast } = useProject();
+  const [exporting, setExporting] = useState(false);
 
-  function handleLineClick(node) {
-    navigate('editor', { sceneId: node.attrs?.id, label: nodeText(node), source: 'screenplay line' });
+  function handleLineClick(act, card, node) {
+    navigate('editor', {
+      actId: act.id,
+      cardId: card.id,
+      blockId: node.attrs?.id,
+      label: card.title,
+      source: 'screenplay line',
+    });
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      // Yield a frame so the "Exporting…" label actually paints before the
+      // (synchronous) PDF build work blocks the thread.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      exportScreenplayPdf(project);
+      showToast(`Exported “${project.name}.pdf”`);
+    } catch (err) {
+      console.error(err);
+      showToast('Export failed — see console for details');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
     <div className="screenplay">
       <div className="screenplay-head">
-        <div className="board-title">Screenplay — {project.name}</div>
-        <div className="board-sub">Read-only. Click any line to open it in the Editor.</div>
+        <div>
+          <div className="board-title">Screenplay</div>
+          <div className="board-sub">Read-only. Click any line to open it in the Editor.</div>
+        </div>
+        <button className="export-btn" onClick={handleExport} disabled={exporting}>
+          {exporting ? 'Exporting…' : 'Export PDF'}
+        </button>
       </div>
       <div className="screenplay-scroll">
         <div className="screenplay-page">
-          {nodes.map((node, idx) => {
-            const meta = ELEMENT_TYPE_BY_NAME[node.type];
-            const text = nodeText(node);
-            if (!meta || !text) return null;
-            return (
-              <button
-                key={node.attrs?.id ?? idx}
-                className={`sp-block ${meta.css}`}
-                onClick={() => handleLineClick(node)}
-              >
-                {text}
-              </button>
-            );
-          })}
+          {project.acts.map((act) =>
+            act.cards.map((card) => {
+              const nodes = card.sceneDoc?.content ?? [];
+              return nodes.map((node, idx) => {
+                const meta = ELEMENT_TYPE_BY_NAME[node.type];
+                const text = nodeText(node);
+                if (!meta || !text) return null;
+                return (
+                  <button
+                    key={node.attrs?.id ?? `${card.id}-${idx}`}
+                    className={`sp-block ${meta.css}`}
+                    onClick={() => handleLineClick(act, card, node)}
+                  >
+                    {text}
+                  </button>
+                );
+              });
+            })
+          )}
         </div>
       </div>
     </div>

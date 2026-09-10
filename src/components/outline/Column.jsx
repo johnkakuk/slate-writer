@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import BeatCard from './BeatCard.jsx';
 
 export default function Column({ act, sceneNumbers }) {
-  const { dragState, dropPreview, updateDropPreview, dropCard, renameAct, addCard } = useProject();
+  const { dragState, dropPreview, updateDropPreview, dropCard, renameAct, addCard, openActMenu } = useProject();
+  const [editingTitle, setEditingTitle] = useState(false);
 
   function handleDragOver(e) {
     e.preventDefault();
@@ -31,6 +32,7 @@ export default function Column({ act, sceneNumbers }) {
   }
 
   function handleTitleBlur(e) {
+    setEditingTitle(false);
     const title = e.currentTarget.textContent.trim() || act.title;
     renameAct(act.id, title);
   }
@@ -42,18 +44,33 @@ export default function Column({ act, sceneNumbers }) {
     }
   }
 
+  // Same fix as the beat card fields: a right-click's mousedown would
+  // otherwise focus the contentEditable title first, which would make the
+  // header's context-menu handler think an edit is already in progress.
+  function blockRightClickFocus(e) {
+    if (e.button === 2) e.preventDefault();
+  }
+
+  function handleHeadContextMenu(e) {
+    if (editingTitle) return; // let the native text-editing context menu show instead
+    e.preventDefault();
+    openActMenu(act.id, act.title, e.clientX, e.clientY);
+  }
+
   const showIndicatorAt = dropPreview?.actId === act.id ? dropPreview.beforeCardId : undefined;
 
   return (
-    <div className="board-col">
-      <div className="board-col-head">
+    <div className="board-col" data-act-id={act.id}>
+      <div className="board-col-head" onContextMenu={handleHeadContextMenu} onMouseDown={blockRightClickFocus}>
         <span
           className="board-col-title"
           contentEditable
           suppressContentEditableWarning
           spellCheck={false}
+          onFocus={() => setEditingTitle(true)}
           onBlur={handleTitleBlur}
           onKeyDown={handleTitleKeyDown}
+          onMouseDown={blockRightClickFocus}
         >
           {act.title}
         </span>

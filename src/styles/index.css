@@ -1,6 +1,19 @@
 /* ---------------- Reset & theme tokens ---------------- */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Selected app-wide font (Settings -> Appearance). Independent of light/dark
+   theme, so it lives in its own unconditional :root rule rather than the
+   theme blocks below — see ProjectContext's `font` state, which sets this
+   custom property directly rather than swapping a [data-font] attribute,
+   since the value is a full font-family stack, not a fixed set of variants. */
+:root {
+  --font-family: 'Courier New', Courier, monospace;
+  /* The script itself (Screenplay view + the Editor -- both render the
+     same .screenplay-page container) can be set independently of the rest
+     of the UI, see the second font picker in Settings. */
+  --script-font-family: 'Courier New', Courier, monospace;
+}
+
 /* Dark "Production Deck" theme — the default. Applies on bare :root and is
    also repeated explicitly under [data-theme="dark"] so the Settings toggle
    can force it even if a future OS-level dark-mode media query is added. */
@@ -79,12 +92,12 @@ html, body, #root {
 html, body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--font-family);
   overflow: hidden;
 }
 
 button, input, [contenteditable] {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: var(--font-family);
 }
 
 button {
@@ -190,6 +203,23 @@ button {
 }
 .project-item:last-child { border-bottom: none; }
 .project-item.active { color: var(--accent); font-weight: 700; }
+.project-empty { padding: 10px; font-size: 11px; color: var(--text-dim); }
+.project-new { border-top: 1px solid var(--border-alt2); }
+.project-new-btn {
+  width: 100%; text-align: left; padding: 8px 10px; font-size: 11.5px; font-weight: 600;
+  background: none; border: none; color: var(--accent);
+}
+.project-new-btn:hover { background: var(--accent-hover-bg); }
+.project-new-input {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 11.5px;
+  background: var(--bg-dark); border: none; color: var(--text); outline: none;
+}
+.project-new-input::placeholder { color: var(--text-dim); }
+.project-item-rename-input {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 11.5px;
+  background: var(--accent-hover-bg); border: none; border-bottom: 1px solid var(--border-alt2);
+  color: var(--text); outline: none;
+}
 
 /* ---------------- File tree ---------------- */
 .files { padding: 12px 8px; flex: 1; min-height: 0; overflow-y: auto; }
@@ -199,29 +229,47 @@ button {
 }
 .files-h-add { background: none; border: none; color: var(--text-dim); font-size: 11px; padding: 0 2px; }
 .files-h-add:hover { color: var(--text-secondary); }
+.folder-row { display: flex; align-items: center; }
 .folder {
   font-size: 12px; color: var(--text-file-color); padding: 6px 10px;
   display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
-  background: none; border: none; width: 100%; text-align: left;
+  background: none; border: none; flex: 1; text-align: left; min-width: 0;
 }
-.folder-icon { color: var(--folder-icon); display: inline-block; width: 8px; }
+.folder-icon { color: var(--folder-icon); display: inline-block; width: 8px; flex-shrink: 0; }
+.folder-add {
+  flex-shrink: 0; background: none; border: none; color: var(--text-dim); font-size: 11px;
+  padding: 4px 8px; border-radius: 4px;
+}
+.folder-add:hover { color: var(--text-secondary); background: var(--surface); }
+.folder-empty { font-size: 11px; color: var(--text-dim); padding: 4px 10px 4px 28px; }
 .file {
   font-size: 12px; color: var(--text-file); padding: 6px 10px 6px 28px;
   display: flex; align-items: center; justify-content: space-between;
   background: none; border: none; width: 100%; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .file.active { color: var(--text); background: var(--accent-bg); border-radius: 4px; }
 .file .file-badge { font-size: 9px; color: var(--accent); }
+.file:disabled { color: var(--text-dim); cursor: default; }
 .sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim); }
 
 /* ---------------- Main ---------------- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+/* Three tracks, the outer two always equal width (both `1fr`, and neither
+   ever needs more than a sliver of its share at any real viewport width) --
+   so the title in the middle track sits truly centered on the bar, and
+   stays put when topbar-left's content (the reopen/back buttons) appears or
+   disappears, since that only changes what's *inside* the first track, not
+   the track's width relative to the third. Only breaks down if topbar-left
+   ever needs more space than an even split allows, which is a
+   responsiveness concern, not a layout-shift one. */
 .topbar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
   padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
   min-height: 47px;
 }
-.topbar-left { display: flex; align-items: center; gap: 8px; }
+.topbar-left { display: flex; align-items: center; gap: 8px; justify-self: start; }
+.topbar-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); justify-self: center; }
 .reopen-btn {
   display: none; align-items: center; justify-content: center;
   width: 26px; height: 26px; border-radius: 5px;
@@ -240,12 +288,13 @@ button {
   font-size: 11px; padding: 7px 12px; margin-left: auto;
   background: var(--accent); color: var(--accent-ink); border: none; border-radius: 5px; font-weight: 600;
 }
+.export-btn:disabled { opacity: 0.6; cursor: default; }
 
 /* ---------------- Outline board ---------------- */
 .board { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .board-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 16px 12px;
+  padding: 16px 16px 40px;
 }
 .board-title { font-size: 13px; font-weight: 700; color: var(--text); }
 .board-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
@@ -265,9 +314,9 @@ button {
 }
 .board-col-title {
   font-size: 11.5px; font-weight: 700; color: var(--text-col-title); letter-spacing: 0.03em;
-  outline: none; border-radius: 3px; padding: 2px 4px;
+  outline: none; border-radius: 3px; padding: 2px 4px; cursor: text;
 }
-.board-col-title:focus { background: var(--surface); }
+.board-col-title:hover, .board-col-title:focus { background: var(--surface); }
 .board-col-count { font-size: 10px; color: var(--text-dim); background: var(--bg-dark); padding: 2px 7px; border-radius: 10px; }
 
 .board-col-cards { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 40px; }
@@ -328,7 +377,19 @@ button {
 
 /* ---------------- Screenplay (read-only) ---------------- */
 .screenplay { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.screenplay-head { padding: 16px 16px 12px; }
+.screenplay-head { padding: 16px 16px 40px; }
+.editor-shell .screenplay-head, .screenplay > .screenplay-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+}
+.editor-beat-nav { display: flex; gap: 6px; flex-shrink: 0; }
+.editor-beat-nav-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 10px; border-radius: 5px;
+  background: transparent; border: 1px solid var(--border-alt); color: var(--text-muted);
+  font-size: 11px; font-weight: 600;
+}
+.editor-beat-nav-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.editor-beat-nav-btn:disabled { opacity: 0.4; cursor: default; }
 .screenplay-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 40px; }
 .screenplay-page {
   max-width: 560px; margin: 0 auto;
@@ -337,12 +398,12 @@ button {
   border-radius: 4px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25);
   padding: 40px 44px 60px;
-  font-size: 12.5px; line-height: 1.75;
+  font-family: var(--script-font-family); font-size: 12.5px; line-height: 1.75;
 }
 .sp-block {
   cursor: pointer; border-radius: 3px; padding: 1px 4px; margin: 0 -4px;
   transition: background 0.1s ease; background: none; border: none; display: block; width: 100%; text-align: left;
-  font-family: 'Courier New', Courier, monospace; font-size: 12.5px; line-height: 1.75; color: inherit;
+  font-family: var(--script-font-family); font-size: 12.5px; line-height: 1.75; color: inherit;
 }
 .sp-block:hover { background: var(--accent-hover-bg); }
 .sp-scene { font-weight: 700; margin: 16px 0 10px; }
@@ -353,6 +414,32 @@ button {
 .sp-paren { text-align: center; font-style: italic; color: var(--page-text-secondary); margin-bottom: 2px; }
 .sp-trans { text-align: right; font-weight: 700; margin-bottom: 12px; }
 
+/* ---------------- Title page ---------------- */
+/* Roughly matches an 8.5x11 page's proportions at the .screenplay-page's
+   560px width, so the on-screen editor previews the real PDF layout:
+   title block vertically centered, contact/draft info pinned to the
+   bottom corners. */
+.title-page { min-height: 720px; display: flex; flex-direction: column; }
+.title-page-field {
+  background: transparent; border: none; outline: none; color: inherit;
+  font-family: var(--script-font-family); border-radius: 3px;
+}
+.title-page-field::placeholder { color: var(--page-text-secondary); opacity: 0.65; }
+.title-page-field:hover, .title-page-field:focus { background: var(--accent-hover-bg); }
+.title-page-center {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  text-align: center;
+}
+.title-page-title-input { font-size: 20px; font-weight: 700; text-align: center; width: 100%; padding: 4px 8px; }
+.title-page-credit-input, .title-page-author-input { font-size: 12.5px; text-align: center; width: 100%; padding: 2px 8px; }
+.title-page-basedon-input { font-size: 12.5px; text-align: center; width: 100%; padding: 2px 8px; margin-top: 14px; color: var(--page-text-secondary); }
+.title-page-corners { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.title-page-contact-input {
+  flex: 1; max-width: 260px; font-size: 11px; line-height: 1.6; text-align: left;
+  resize: none; padding: 4px 8px;
+}
+.title-page-draft-input { font-size: 11px; text-align: right; padding: 4px 8px; flex-shrink: 0; }
+
 /* ---------------- Editor ---------------- */
 .editor-shell { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 /* No horizontal padding here — .screenplay-head (now scrolling inside this
@@ -360,7 +447,15 @@ button {
    .screenplay-page centers itself with margin:auto regardless. */
 .editor-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 0 40px; }
 .editor-page { cursor: text; }
-.editor-page .ProseMirror { outline: none; }
+/* The global `[contenteditable] { font-family: var(--font-family) }` rule
+   (for card titles, column titles, etc.) directly matches ProseMirror's own
+   contenteditable root div with equal specificity, and a direct match wins
+   over an inherited value regardless of source order -- so without this,
+   the script font never reaches .sp-scene/.sp-action/etc in the Editor,
+   only in the read-only Screenplay view (where .sp-block's own explicit
+   rule, a class selector, already outranks the plain `button` element
+   selector). Higher specificity here restores it for the Editor too. */
+.editor-page .ProseMirror { outline: none; font-family: var(--script-font-family); }
 .editor-page .ProseMirror .sp-scene,
 .editor-page .ProseMirror .sp-action,
 .editor-page .ProseMirror .sp-char,
@@ -458,9 +553,65 @@ button {
 }
 .delete-confirm-danger:hover { background: rgba(199, 92, 79, 0.28); }
 
+/* ---------------- Markdown docs (Character Bible / Notes & Research) ---------------- */
+.markdown-editor-shell { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.markdown-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 60px; }
+
+.markdown-rich-editor {
+  width: 100%; max-width: 720px; margin: 0 auto;
+  color: var(--text); font-family: var(--font-family);
+  font-size: 13px; line-height: 1.7;
+}
+.markdown-rich-editor .ProseMirror { outline: none; min-height: calc(100vh - 220px); }
+
+.markdown-rich-editor p { margin: 0 0 14px; }
+.markdown-rich-editor h1, .markdown-rich-editor h2, .markdown-rich-editor h3,
+.markdown-rich-editor h4, .markdown-rich-editor h5, .markdown-rich-editor h6 {
+  font-weight: 700; color: var(--text-bright); line-height: 1.3;
+  margin: 28px 0 12px;
+}
+.markdown-rich-editor h1:first-child, .markdown-rich-editor h2:first-child,
+.markdown-rich-editor h3:first-child { margin-top: 0; }
+.markdown-rich-editor h1 { font-size: 26px; padding-bottom: 8px; border-bottom: 1px solid var(--border-alt); }
+.markdown-rich-editor h2 { font-size: 21px; padding-bottom: 6px; border-bottom: 1px solid var(--border-alt2); }
+.markdown-rich-editor h3 { font-size: 17px; }
+.markdown-rich-editor h4 { font-size: 15px; color: var(--text); }
+.markdown-rich-editor h5 { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+.markdown-rich-editor h6 { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.markdown-rich-editor ul, .markdown-rich-editor ol {
+  margin: 0 0 14px; padding-left: 28px;
+}
+.markdown-rich-editor ul { list-style: disc; }
+.markdown-rich-editor ul ul { list-style: circle; }
+.markdown-rich-editor ul ul ul { list-style: square; }
+.markdown-rich-editor ol { list-style: decimal; }
+.markdown-rich-editor li { margin-bottom: 6px; }
+.markdown-rich-editor li > ul, .markdown-rich-editor li > ol { margin-top: 6px; margin-bottom: 0; }
+.markdown-rich-editor li::marker { color: var(--accent); }
+
+.markdown-rich-editor blockquote {
+  margin: 0 0 14px; padding: 2px 16px;
+  border-left: 3px solid var(--accent); color: var(--text-secondary); font-style: italic;
+}
+.markdown-rich-editor hr { border: none; border-top: 1px solid var(--border-alt); margin: 24px 0; }
+.markdown-rich-editor strong { font-weight: 700; color: var(--text-bright); }
+.markdown-rich-editor em { font-style: italic; }
+.markdown-rich-editor code {
+  font-family: var(--font-family); font-size: 0.92em;
+  background: var(--surface); border: 1px solid var(--border-alt); border-radius: 3px; padding: 1px 5px;
+}
+.markdown-rich-editor pre {
+  margin: 0 0 14px; padding: 12px 14px; overflow-x: auto;
+  background: var(--surface); border: 1px solid var(--border-alt); border-radius: 6px;
+}
+.markdown-rich-editor pre code { background: none; border: none; padding: 0; }
+.markdown-rich-editor a { color: var(--accent); text-decoration: underline; }
+.markdown-rich-editor .ProseMirror-gapcursor:after { border-top-color: var(--text); }
+
 /* ---------------- Settings ---------------- */
 .settings-view { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
-.settings-body { padding: 4px 16px 24px; max-width: 420px; }
+.settings-body { padding: 4px 16px 24px; max-width: 640px; }
 .settings-section { padding: 16px 0; border-top: 1px solid var(--border); }
 .settings-section:first-child { border-top: none; }
 .settings-section-label {
@@ -479,6 +630,52 @@ button {
 .theme-toggle-label { font-size: 12px; font-weight: 700; color: var(--text); }
 .theme-toggle-btn.active .theme-toggle-label { color: var(--accent); }
 .theme-toggle-hint { font-size: 10px; color: var(--text-dim); }
+
+.settings-subsection-label {
+  font-size: 10px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 20px 0 10px;
+}
+.settings-font-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+@media (max-width: 560px) {
+  .settings-font-grid { grid-template-columns: 1fr; }
+}
+.settings-field { margin-top: 16px; }
+.settings-font-grid .settings-field { margin-top: 0; }
+.settings-field-label {
+  display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;
+}
+.settings-field-hint { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
+
+.font-select { position: relative; width: 100%; max-width: 320px; }
+.font-select-trigger {
+  width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px;
+  background: var(--surface-alt); border: 1px solid var(--border-alt); border-radius: 8px;
+  color: var(--text); font-size: 13px;
+}
+.font-select-trigger:hover { border-color: var(--text-dim); }
+.font-select.open .project-chevron { transform: rotate(180deg); }
+.font-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50;
+  max-height: 320px; overflow-y: auto;
+  background: var(--surface-dropdown); border: 1px solid var(--border-alt); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+}
+.font-dropdown-group { padding: 4px 0; }
+.font-dropdown-group + .font-dropdown-group { border-top: 1px solid var(--border-alt2); }
+.font-dropdown-label {
+  font-size: 9.5px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 6px 10px 4px;
+}
+.font-option {
+  width: 100%; text-align: left; padding: 7px 10px; border-radius: 5px;
+  background: none; border: none; color: var(--text); font-size: 14px;
+}
+.font-option:hover { background: var(--accent-hover-bg); }
+.font-option.active { color: var(--accent); background: var(--accent-bg); }
 
 /* ---------------- Placeholder / stub views ---------------- */
 .placeholder-view {
