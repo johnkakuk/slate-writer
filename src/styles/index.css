@@ -108,6 +108,11 @@ button {
 .app {
   display: flex;
   height: 100vh;
+  /* Requires the viewport-fit=cover meta tag (see index.html) to be
+     non-zero at all -- keeps content clear of the notch/Dynamic Island and
+     home indicator on iOS. A no-op everywhere else (env() falls back to 0). */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
 }
 /* Native (iOS) only, and only for the brief window before the async SQLite
    read resolves -- see ProjectContext.jsx's bootstrap effect. */
@@ -265,6 +270,31 @@ button {
 .file:disabled { color: var(--text-dim); cursor: default; }
 .sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim); }
 
+/* Below tablet width, the sidebar can't share space with the board the way
+   it does on desktop (a fixed 250px sidebar leaves almost nothing for a
+   ~390px phone screen) -- it becomes a slide-over drawer instead, using the
+   same sidebarCollapsed state/toggle that already exists for desktop's
+   collapse button, just interpreted as "closed" vs. "open overlay" here
+   rather than "narrow" vs. "full width". This is a functional stopgap, not
+   a considered mobile layout redesign -- the board's own 3-columns-wide
+   Outline view, for instance, still just horizontally scrolls one 260px
+   column at a time rather than being redesigned around a phone screen. */
+@media (max-width: 820px) {
+  .sidebar {
+    position: absolute; top: 0; left: 0; bottom: 0;
+    width: min(82vw, 300px);
+    z-index: 40;
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+    transition: transform 0.2s ease;
+  }
+  .sidebar.collapsed {
+    width: min(82vw, 300px);
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+  .sidebar-content { width: 100%; }
+}
+
 /* ---------------- Main ---------------- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 /* Three tracks, the outer two always equal width (both `1fr`, and neither
@@ -364,6 +394,16 @@ button {
 .beat-card-icon-btn:hover { background: var(--accent-hover-bg); color: var(--text-secondary); }
 .beat-card-icon-btn.flagged { color: var(--accent); }
 .beat-card-icon-btn.flagged:hover { color: var(--accent); }
+
+/* Touch-only drag handle (see TouchDragHandle.jsx / useTouchDragHandle.js)
+   -- desktop keeps reordering via native HTML5 drag-and-drop from anywhere
+   on the card, so this stays hidden there entirely rather than adding a
+   redundant, confusing extra control. */
+.touch-drag-handle { display: none; }
+.touch-platform .touch-drag-handle {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; color: var(--text-dim); touch-action: none;
+}
 
 .drop-indicator {
   height: 3px; border-radius: 2px;
@@ -826,3 +866,23 @@ button {
   background: var(--accent); color: var(--accent-ink); border: none;
 }
 .modal-save-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------------- Touch platform (iOS) ---------------- */
+/* Suppresses iOS's own long-press text-selection magnifier/callout on
+   elements that have a *custom* long-press behavior of their own (see
+   useLongPress.js/useTouchReorder usage across BeatCard, Column,
+   ProjectSwitcher, FileTree) -- without this, holding a finger on one of
+   these fights the native UI for the same gesture. Scoped to .touch-platform
+   only (see main.jsx) and to specific rows/handles, not applied globally --
+   e.g. never touches the contentEditable title/description fields
+   themselves, which still need their own normal text selection to work. */
+.touch-platform .beat-card,
+.touch-platform .board-col-head,
+.touch-platform .folder-row,
+.touch-platform .file,
+.touch-platform .project-trigger,
+.touch-platform .project-item {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
