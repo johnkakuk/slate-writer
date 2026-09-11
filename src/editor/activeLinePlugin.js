@@ -3,6 +3,18 @@ import { Decoration, DecorationSet } from 'prosemirror-view';
 
 export const activeLineKey = new PluginKey('activeLine');
 
+// Marks the self-dispatch below as internal bookkeeping, not a real user
+// interaction -- Editor.jsx's Typewriter Mode scroll handling checks this
+// and skips entirely for a transaction carrying it. Without this, the
+// self-dispatch (untagged, so neither "pointer" nor a real key-driven edit)
+// fell into the "else" branch there and forcibly re-scrolled to the OLD
+// anchor immediately after every tap, undoing the tap's own correct
+// no-scroll handling one transaction later -- this is what made tapping a
+// line visibly jump and sometimes land the highlight on the wrong line
+// once 'line' mode's measurement dispatch entered the picture; the other
+// styles never self-dispatch, so they never hit this.
+export const LINE_MEASURE_META = 'activeLineMeasure';
+
 // Finds the ProseMirror position range of the *visual* (rendered, wrapped)
 // line the caret is currently on -- not the whole block, and not a
 // grammatical sentence. There's no way to derive this from the document
@@ -74,7 +86,9 @@ export function activeLinePlugin() {
           const prev = pluginState.lineRange;
           const changed = !prev || !range || prev[0] !== range[0] || prev[1] !== range[1];
           if (!changed) return;
-          view.dispatch(view.state.tr.setMeta(activeLineKey, { ...pluginState, lineRange: range }));
+          view.dispatch(
+            view.state.tr.setMeta(activeLineKey, { ...pluginState, lineRange: range }).setMeta(LINE_MEASURE_META, true)
+          );
         },
       };
     },

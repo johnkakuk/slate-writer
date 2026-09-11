@@ -15,7 +15,7 @@ import { emptyDoc } from '../../editor/docJson.js';
 import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
 import { touchCaretPlugin } from '../../editor/touchCaretPlugin.js';
-import { activeLinePlugin, activeLineKey } from '../../editor/activeLinePlugin.js';
+import { activeLinePlugin, activeLineKey, LINE_MEASURE_META } from '../../editor/activeLinePlugin.js';
 import { autoParentheticalPlugin } from '../../editor/autoParentheticalPlugin.js';
 import { characterAutocompletePlugin } from '../../editor/characterAutocompletePlugin.js';
 import { getRecentCharacterNames } from '../../editor/characterNames.js';
@@ -268,7 +268,16 @@ export default function Editor() {
         // look -- forcibly scrolling their choice to the anchor would fight
         // the click itself. The sticky line should go meet them there
         // instead, same as it does for a manual scroll.
-        if (typewriterModeRef.current) {
+        // activeLinePlugin's own 'line'-mode measurement self-dispatch
+        // (see LINE_MEASURE_META) is bookkeeping reacting to whatever the
+        // previous transaction already was -- not a new user interaction --
+        // so it must never reach the pointer/scrollToFraction split below.
+        // Left in, it fell into the scrollToFraction branch (untagged, so
+        // neither "pointer" nor a real edit) and forcibly re-scrolled back
+        // to the OLD anchor one transaction after every tap, undoing the
+        // tap's own correct no-scroll handling and sometimes leaving the
+        // highlight on the wrong line.
+        if (typewriterModeRef.current && !tr.getMeta(LINE_MEASURE_META)) {
           if (tr.getMeta('pointer')) {
             // A real click/tap-driven selection change, per PM's own
             // "pointer" tag -- as opposed to a scroll/drag gesture, which
