@@ -26,6 +26,8 @@ export default function SettingsView() {
     setTypewriterMode,
     typewriterHighlightStyle,
     setTypewriterHighlightStyle,
+    autoParenthetical,
+    setAutoParenthetical,
   } = useProject();
 
   return (
@@ -108,6 +110,27 @@ export default function SettingsView() {
               </div>
             </>
           )}
+
+          <div className="settings-subsection-label">Auto Parenthetical</div>
+          <div className="theme-toggle">
+            <button
+              className={`theme-toggle-btn${!autoParenthetical ? ' active' : ''}`}
+              onClick={() => setAutoParenthetical(false)}
+            >
+              <span className="theme-toggle-label">Off</span>
+              <span className="theme-toggle-hint">Use the slash menu only</span>
+            </button>
+            <button
+              className={`theme-toggle-btn${autoParenthetical ? ' active' : ''}`}
+              onClick={() => setAutoParenthetical(true)}
+            >
+              <span className="theme-toggle-label">On</span>
+              <span className="theme-toggle-hint">Typing "(" converts the line</span>
+            </button>
+          </div>
+          <div className="settings-field-hint">
+            Typing "(" as the first character of an empty Dialogue or Action line converts it to a Parenthetical.
+          </div>
         </div>
       </div>
     </div>

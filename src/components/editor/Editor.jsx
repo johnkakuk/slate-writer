@@ -16,6 +16,9 @@ import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
 import { touchCaretPlugin } from '../../editor/touchCaretPlugin.js';
 import { activeLinePlugin, activeLineKey } from '../../editor/activeLinePlugin.js';
+import { autoParentheticalPlugin } from '../../editor/autoParentheticalPlugin.js';
+import { characterAutocompletePlugin } from '../../editor/characterAutocompletePlugin.js';
+import { getRecentCharacterNames } from '../../editor/characterNames.js';
 import { computeScriptPagination } from '../../export/paginate.js';
 
 // Arriving here from a Screenplay-view line click always centers that line
@@ -42,6 +45,7 @@ export default function Editor() {
     updateCardSceneDoc,
     typewriterMode,
     typewriterHighlightStyle,
+    autoParenthetical,
     typewriterAnchor,
     setTypewriterAnchor,
   } = useProject();
@@ -79,10 +83,23 @@ export default function Editor() {
   // pattern as initialDocRef/initialTargetRef.
   const typewriterModeRef = useRef(typewriterMode);
   const typewriterHighlightStyleRef = useRef(typewriterHighlightStyle);
+  const autoParentheticalRef = useRef(autoParenthetical);
   const typewriterAnchorRef = useRef(typewriterAnchor);
+  // Recomputed whenever the project changes (cheap: plain text scanning, no
+  // layout/measurement work, so unlike pagination this doesn't need
+  // debouncing) rather than once at mount -- Tab should see a
+  // just-introduced character's name on the very next block, not only
+  // after reopening the Editor.
+  const recentCharacterNamesRef = useRef(getRecentCharacterNames(project));
+  useEffect(() => {
+    recentCharacterNamesRef.current = getRecentCharacterNames(project);
+  }, [project]);
   useEffect(() => {
     typewriterModeRef.current = typewriterMode;
   }, [typewriterMode]);
+  useEffect(() => {
+    autoParentheticalRef.current = autoParenthetical;
+  }, [autoParenthetical]);
   useEffect(() => {
     typewriterHighlightStyleRef.current = typewriterHighlightStyle;
   }, [typewriterHighlightStyle]);
@@ -143,7 +160,7 @@ export default function Editor() {
       doc: Node.fromJSON(schema, initialDocRef.current),
       plugins: [
         slashMenuPlugin(),
-        editorKeymap(),
+        editorKeymap(() => recentCharacterNamesRef.current),
         history(),
         autoCapsPlugin(),
         placeholderPlugin(),
@@ -151,6 +168,8 @@ export default function Editor() {
         pageBreakPlugin(),
         activeLinePlugin(),
         touchCaretPlugin(),
+        autoParentheticalPlugin(autoParentheticalRef),
+        characterAutocompletePlugin(() => recentCharacterNamesRef.current),
       ],
     });
 

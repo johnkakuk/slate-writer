@@ -191,6 +191,9 @@ export function ProjectProvider({ children }) {
   const [typewriterHighlightStyle, setTypewriterHighlightStyle] = useState(() =>
     VALID_HIGHLIGHT_STYLES.includes(persisted?.typewriterHighlightStyle) ? persisted.typewriterHighlightStyle : 'paragraph'
   );
+  // Defaults on -- the point is getting out of the writer's way, so it
+  // should already be doing that the first time they type "(".
+  const [autoParenthetical, setAutoParenthetical] = useState(() => persisted?.autoParenthetical !== false);
   // Where the active line sticks, as a fraction of the Editor's viewport
   // height (0 = top, 1 = bottom) -- deliberately NOT persisted to disk like
   // the mode toggle itself. It's meant to be "wherever you last scrolled it
@@ -256,6 +259,7 @@ export function ProjectProvider({ children }) {
         setTypewriterHighlightStyle(
           VALID_HIGHLIGHT_STYLES.includes(data.typewriterHighlightStyle) ? data.typewriterHighlightStyle : 'paragraph'
         );
+        setAutoParenthetical(data.autoParenthetical !== false);
         const builtProjects = buildInitialProjects(data);
         setProjects(builtProjects);
         setCurrentProjectId(
@@ -315,6 +319,7 @@ export function ProjectProvider({ children }) {
           scriptFontId,
           typewriterMode,
           typewriterHighlightStyle,
+          autoParenthetical,
           lastSavedAt: savedAt,
         })
       );
@@ -322,7 +327,18 @@ export function ProjectProvider({ children }) {
       // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode, typewriterHighlightStyle, ready]);
+  }, [
+    projects,
+    currentProjectId,
+    sidebarCollapsed,
+    theme,
+    fontId,
+    scriptFontId,
+    typewriterMode,
+    typewriterHighlightStyle,
+    autoParenthetical,
+    ready,
+  ]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -844,6 +860,8 @@ export function ProjectProvider({ children }) {
       setTypewriterMode,
       typewriterHighlightStyle,
       setTypewriterHighlightStyle,
+      autoParenthetical,
+      setAutoParenthetical,
       typewriterAnchor,
       setTypewriterAnchor,
       project,
@@ -928,6 +946,7 @@ export function ProjectProvider({ children }) {
       scriptFontId,
       typewriterMode,
       typewriterHighlightStyle,
+      autoParenthetical,
       typewriterAnchor,
       project,
       projects,

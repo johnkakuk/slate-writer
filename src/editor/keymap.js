@@ -3,6 +3,7 @@ import { baseKeymap } from 'prosemirror-commands';
 import { undo, redo } from 'prosemirror-history';
 import { nextElementType, ENTER_CONTINUATION } from './elementTypes.js';
 import { generateId } from '../utils/id.js';
+import { acceptCharacterSuggestion } from './characterAutocompletePlugin.js';
 
 // Tab / Shift-Tab: cycle the current block through the element types, the
 // same manual-override mechanic real screenwriting software uses. The
@@ -18,6 +19,35 @@ function cycleType(direction) {
     if (dispatch) {
       const pos = $from.before($from.depth);
       dispatch(state.tr.setNodeMarkup(pos, nextType, node.attrs).scrollIntoView());
+    }
+    return true;
+  };
+}
+
+// Tab on an empty (or already-cycling) Character block walks through
+// recently-used character names instead of changing the block's element
+// type -- reaching for a name you've already used shouldn't require typing
+// it out again. Only kicks in when there's nothing real to clobber: an
+// empty block, or one that already holds a name from this same list (so
+// repeated Tabs advance through it), never a name the writer is actually
+// typing that just isn't recent enough to be in the list. Falls through to
+// the normal type-cycle otherwise -- the slash menu's own Parenthetical/
+// etc. entries are untouched either way.
+function cycleCharacterName(getRecentNames) {
+  return (state, dispatch) => {
+    const { $from } = state.selection;
+    const node = $from.parent;
+    if (node.type.name !== 'character') return false;
+    const names = getRecentNames?.() ?? [];
+    if (!names.length) return false;
+    const currentText = node.textContent.trim().toUpperCase();
+    if (currentText && !names.includes(currentText)) return false;
+    const currentIdx = names.indexOf(currentText);
+    const nextName = names[(currentIdx + 1) % names.length];
+    if (dispatch) {
+      const from = $from.before($from.depth) + 1;
+      const to = from + node.content.size;
+      dispatch(state.tr.insertText(nextName, from, to).scrollIntoView());
     }
     return true;
   };
@@ -58,11 +88,23 @@ function smartEnter(state, dispatch) {
   return true;
 }
 
-export function editorKeymap() {
+// `getRecentNames` is a function, not a plain array, so it can read a live
+// ref for the current recently-used-names list (see Editor.jsx) --
+// editorKeymap() itself runs once at mount and never re-runs, same
+// constraint as this editor's other settings-driven plugins.
+export function editorKeymap(getRecentNames) {
+  const acceptSuggestion = acceptCharacterSuggestion(getRecentNames);
+  const nameCycle = cycleCharacterName(getRecentNames);
+  const typeCycle = cycleType(1);
   return keymap({
     ...baseKeymap,
     Enter: smartEnter,
-    Tab: cycleType(1),
+    // In priority order: accept a visible autocomplete ghost suggestion,
+    // then cycle through recently-used names on an empty/cycling Character
+    // block, then fall back to the original type-cycle. Mutually exclusive
+    // by construction -- a suggestion only shows for a non-empty, non-
+    // recent-name prefix, which is exactly the case name-cycling declines.
+    Tab: (state, dispatch) => acceptSuggestion(state, dispatch) || nameCycle(state, dispatch) || typeCycle(state, dispatch),
     'Shift-Tab': cycleType(-1),
     'Mod-z': undo,
     'Shift-Mod-z': redo,
