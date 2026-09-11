@@ -25,25 +25,15 @@ export default function ScreenplayView() {
   const pagination = useMemo(() => computeScriptPagination(project), [project]);
   const pageById = useMemo(() => new Map(pagination.blocks.map((b) => [b.id, b])), [pagination]);
 
-  function handleLineClick(e, act, card, node) {
-    // Captured as a *fraction* of the scroll container's viewport height,
-    // not a raw pixel offset -- the Editor shows a different, usually much
-    // shorter, document (one scene vs. the whole concatenated script), so
-    // matching an absolute position wouldn't mean anything there. A
-    // fraction of "how far down the visible viewport was this line"
-    // reproduces the same felt position regardless of window size or how
-    // the two documents happen to lay out.
-    const container = e.currentTarget.closest('.screenplay-scroll');
-    const containerRect = container.getBoundingClientRect();
-    const lineRect = e.currentTarget.getBoundingClientRect();
-    const scrollFraction = (lineRect.top - containerRect.top) / containerRect.height;
+  function handleLineClick(act, card, node) {
+    // Where the line lands in the Editor is Editor.jsx's call (currently:
+    // always centered) -- this just says which line.
     navigate('editor', {
       actId: act.id,
       cardId: card.id,
       blockId: node.attrs?.id,
       label: card.title,
       source: 'screenplay line',
-      scrollFraction,
     });
   }
 
@@ -93,10 +83,7 @@ export default function ScreenplayView() {
                 return (
                   <React.Fragment key={id ?? `${card.id}-${idx}`}>
                     {pageInfo?.startsNewPage && <div className="page-break-marker">Page {pageInfo.page}</div>}
-                    <button
-                      className={`sp-block ${meta.css}`}
-                      onClick={(e) => handleLineClick(e, act, card, node)}
-                    >
+                    <button className={`sp-block ${meta.css}`} onClick={() => handleLineClick(act, card, node)}>
                       {text}
                     </button>
                   </React.Fragment>

@@ -409,7 +409,16 @@ button {
 }
 .editor-beat-nav-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
 .editor-beat-nav-btn:disabled { opacity: 0.4; cursor: default; }
+.editor-beat-nav-btn.active {
+  background: var(--accent-hover-bg); border-color: var(--accent); color: var(--accent);
+}
+.editor-beat-nav-btn.active:hover { background: var(--accent-hover-bg); color: var(--accent); }
 .screenplay-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px 40px; }
+/* Typewriter Mode: generous top/bottom padding so any line -- including the
+   scene's first or last -- has enough scrollable room on either side to
+   reach the sticky anchor, even in a scene too short to normally fill the
+   viewport (the common case here, since each beat is its own short scene). */
+.editor-scroll.typewriter-mode .editor-page { padding-top: 45vh; padding-bottom: 45vh; }
 .screenplay-page {
   max-width: 560px; margin: 0 auto;
   background: var(--page-bg); color: var(--page-text);
@@ -418,6 +427,11 @@ button {
   box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.25);
   padding: 40px 44px 60px;
   font-family: var(--script-font-family); font-size: 12.5px; line-height: 1.75;
+  /* Lets .active-line's full-bleed highlight (below) and the page-break
+     marker's edge-flush divider both extend past their own box out to
+     exactly the page's edge, instead of trailing off wherever their own
+     (sometimes narrow, sometimes centered) content happens to end. */
+  overflow: hidden;
 }
 .sp-block {
   cursor: pointer; border-radius: 3px; padding: 1px 4px; margin: 0 -4px;
@@ -432,6 +446,37 @@ button {
 .sp-dial { max-width: 62%; margin: 0 auto 12px; text-align: left; }
 .sp-paren { text-align: center; font-style: italic; color: var(--page-text-secondary); margin-bottom: 2px; }
 .sp-trans { text-align: right; font-weight: 700; margin-bottom: 12px; }
+/* A full page-width band behind the active line, not just a tint on its own
+   (sometimes narrow, sometimes centered -- .sp-dial's `max-width: 62%`)
+   box: bled 2000px past both edges, clipped back to exactly the page's
+   edges by .screenplay-page's overflow: hidden above. Deliberately doesn't
+   touch the line's own margin/padding/width -- changing those would
+   reflow its actual text and jiggle it every time a line gains or loses
+   "active" status, which is the opposite of the point (this should read as
+   ambient, not as something that visibly happens). z-index: -1 tucks it
+   behind the line's own text but stays above the page's own background,
+   since that positioning is scoped to .active-line's own stacking context
+   (position: relative), not the page's.
+   z-index: 0 (not just position: relative) is what actually matters here --
+   it's what makes this establish its OWN stacking context, so the child's
+   z-index: -1 is scoped to just behind this element's own text. Without it,
+   that -1 escapes to the nearest ANCESTOR stacking context instead (there
+   usually isn't one nearby), landing behind .screenplay-page's own opaque
+   background and disappearing completely -- confirmed by screenshot.
+   Uses ::after, not ::before: an empty active line is *also* decorated by
+   placeholderPlugin.js's `.is-empty`, which already owns that same node's
+   ::before for its ghost text. Both selectors would otherwise resolve to
+   the same single pseudo-element and get merged -- is-empty's `opacity:
+   0.55` (meant only for its own ghost text) was bleeding onto this
+   highlight too, fading it exactly when the active line was empty. */
+.active-line { position: relative; z-index: 0; }
+.active-line::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: -2000px; right: -2000px;
+  background: var(--accent-hover-bg);
+  z-index: -1;
+}
 
 /* ---------------- Title page ---------------- */
 /* Roughly matches an 8.5x11 page's proportions at the .screenplay-page's

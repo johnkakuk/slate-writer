@@ -164,6 +164,14 @@ export function ProjectProvider({ children }) {
   const [scriptFontId, setScriptFontId] = useState(() =>
     FONT_BY_ID[persisted?.scriptFontId] ? persisted.scriptFontId : DEFAULT_FONT_ID
   );
+  const [typewriterMode, setTypewriterMode] = useState(() => persisted?.typewriterMode === true);
+  // Where the active line sticks, as a fraction of the Editor's viewport
+  // height (0 = top, 1 = bottom) -- deliberately NOT persisted to disk like
+  // the mode toggle itself. It's meant to be "wherever you last scrolled it
+  // to," which should carry over between beats in the same sitting (so it
+  // lives here, in Provider state, not component state that resets on every
+  // Editor remount) but isn't important enough to survive an app relaunch.
+  const [typewriterAnchor, setTypewriterAnchor] = useState(0.5);
   const [projects, setProjects] = useState(() => buildInitialProjects(persisted));
   const [currentProjectId, setCurrentProjectId] = useState(() => {
     if (persisted?.currentProjectId && projects[persisted.currentProjectId]) {
@@ -227,6 +235,7 @@ export function ProjectProvider({ children }) {
           theme,
           fontId,
           scriptFontId,
+          typewriterMode,
           lastSavedAt: savedAt,
         })
       );
@@ -234,7 +243,7 @@ export function ProjectProvider({ children }) {
       // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -742,6 +751,10 @@ export function ProjectProvider({ children }) {
       setFontId,
       scriptFontId,
       setScriptFontId,
+      typewriterMode,
+      setTypewriterMode,
+      typewriterAnchor,
+      setTypewriterAnchor,
       project,
       projects,
       currentProjectId,
@@ -822,6 +835,8 @@ export function ProjectProvider({ children }) {
       theme,
       fontId,
       scriptFontId,
+      typewriterMode,
+      typewriterAnchor,
       project,
       projects,
       currentProjectId,
