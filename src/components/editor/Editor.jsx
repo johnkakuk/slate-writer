@@ -119,27 +119,34 @@ export default function Editor() {
   // anchor update.
   const programmaticScrollRef = useRef(false);
 
-  // Defends against ANY scroll drift while a tap/click is being resolved --
-  // not just this component's own scrollToFraction calls, but also
-  // WebKit's own native "scroll the focused/selected point into view"
-  // behavior, which fires independently of anything dispatched through
-  // ProseMirror and previously slipped past the pointer/scrollIntoView
-  // split below entirely. Tapping/clicking a line is only supposed to move
-  // which line is active, never the scroll position itself.
+  // Defends against ANY scroll drift while a tap's selection change is
+  // being resolved -- not just this component's own scrollToFraction calls,
+  // but also WebKit's own native "scroll the focused/selected point into
+  // view" behavior, which fires independently of anything dispatched
+  // through ProseMirror. Tapping a line is only supposed to move which
+  // line is active, never the scroll position itself.
   //
-  // Set to the scrollTop measured at the very start of the gesture
-  // (mousedown/touchstart, before any focus-driven autoscroll can happen)
-  // and cleared a short beat after the gesture's last pointer-tagged
-  // transaction settles -- long enough to also cover touchCaretPlugin's
-  // next-animation-frame correction, which is part of the same tap. While
-  // set, the scroll listener below snaps any drift straight back instead
-  // of reading it as a deliberate manual scroll.
+  // Two things turned out NOT to reliably distinguish a tap from the start
+  // of a scroll-drag gesture, both tried and both wrong:
+  //   - Locking from a raw touchstart/mousedown: touching the editor is
+  //     also how a drag starts, so every native momentum-scroll frame
+  //     during a real drag got fought and snapped back (visible flashing),
+  //     then jumped once the lock let go.
+  //   - Gating on PM's "pointer" selection-change meta instead: PM resolves
+  //     (tentatively places the caret for) a touch as soon as it starts,
+  //     before it's clear the gesture will turn into a drag -- so this
+  //     transaction fires at touchstart-time regardless, same problem.
+  // What actually distinguishes them is *movement*: a drag moves the touch
+  // point meaningfully before release, a tap doesn't. touchMovedRef below
+  // tracks that (see the touchstart/touchmove listeners in the mount
+  // effect) and gates the lock on it not having happened yet.
   const pointerScrollLockRef = useRef(null);
   const pointerScrollLockTimerRef = useRef(null);
+  const touchMovedRef = useRef(false);
+  const touchStartYRef = useRef(null);
 
-  function lockScrollAgainstPointer() {
-    const scrollEl = mountRef.current?.closest('.editor-scroll');
-    if (!scrollEl) return;
+  function lockScrollAgainstPointer(scrollEl) {
+    if (!scrollEl || touchMovedRef.current) return;
     pointerScrollLockRef.current = scrollEl.scrollTop;
     clearTimeout(pointerScrollLockTimerRef.current);
     pointerScrollLockTimerRef.current = setTimeout(() => {
@@ -153,11 +160,33 @@ export default function Editor() {
   // (the same class of timing WebKit needs for touchCaretPlugin's own
   // correction).
   function reassertScrollLock(scrollEl) {
-    if (pointerScrollLockRef.current == null || !scrollEl) return;
+    if (pointerScrollLockRef.current == null || !scrollEl || touchMovedRef.current) return;
     const locked = pointerScrollLockRef.current;
     if (scrollEl.scrollTop !== locked) {
       programmaticScrollRef.current = true;
       scrollEl.scrollTop = locked;
+    }
+  }
+
+  // A touch that moves more than this many px vertically before release
+  // reads as the start of a scroll-drag, not a tap -- releases the lock
+  // immediately (mid-gesture, not just gating future locks) so the drag's
+  // own native/manual scrolling is free to proceed uncontested.
+  const TAP_MOVE_THRESHOLD = 10;
+
+  function handleTouchStart(event) {
+    touchMovedRef.current = false;
+    touchStartYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleTouchMove(event) {
+    if (touchStartYRef.current == null || touchMovedRef.current) return;
+    const y = event.touches[0]?.clientY;
+    if (typeof y !== 'number') return;
+    if (Math.abs(y - touchStartYRef.current) > TAP_MOVE_THRESHOLD) {
+      touchMovedRef.current = true;
+      pointerScrollLockRef.current = null;
+      clearTimeout(pointerScrollLockTimerRef.current);
     }
   }
 
@@ -241,19 +270,19 @@ export default function Editor() {
         // instead, same as it does for a manual scroll.
         if (typewriterModeRef.current) {
           if (tr.getMeta('pointer')) {
-            adoptCurrentFractionAsAnchor(editorView);
+            // A real click/tap-driven selection change, per PM's own
+            // "pointer" tag -- as opposed to a scroll/drag gesture, which
+            // never produces one of these (dragging just scrolls the
+            // container; it doesn't change the selection). Lock the
+            // *current* scrollTop as the baseline to defend for a short
+            // window, covering this transaction, touchCaretPlugin's
+            // next-frame correction of the same tap (which dispatches its
+            // own follow-up "pointer" transaction), and a couple of settle
+            // frames after for native autoscroll-on-focus that lands late.
             const scrollEl = mountRef.current?.closest('.editor-scroll');
+            lockScrollAgainstPointer(scrollEl);
+            adoptCurrentFractionAsAnchor(editorView);
             reassertScrollLock(scrollEl);
-            // Extend the lock past this transaction -- touchCaretPlugin's
-            // own correction (same tap, same gesture) hasn't necessarily
-            // run yet, and native autoscroll can still land a frame or two
-            // from now.
-            clearTimeout(pointerScrollLockTimerRef.current);
-            if (pointerScrollLockRef.current != null) {
-              pointerScrollLockTimerRef.current = setTimeout(() => {
-                pointerScrollLockRef.current = null;
-              }, 500);
-            }
             requestAnimationFrame(() => {
               reassertScrollLock(scrollEl);
               requestAnimationFrame(() => reassertScrollLock(scrollEl));
@@ -265,11 +294,8 @@ export default function Editor() {
       },
     });
     viewRef.current = editorView;
-    function handlePointerDown() {
-      if (typewriterModeRef.current) lockScrollAgainstPointer();
-    }
-    editorView.dom.addEventListener('mousedown', handlePointerDown);
-    editorView.dom.addEventListener('touchstart', handlePointerDown, { passive: true });
+    editorView.dom.addEventListener('touchstart', handleTouchStart, { passive: true });
+    editorView.dom.addEventListener('touchmove', handleTouchMove, { passive: true });
     setSlashState(slashMenuKey.getState(editorView.state));
     editorView.dispatch(
       editorView.state.tr.setMeta(activeLineKey, {
@@ -322,8 +348,8 @@ export default function Editor() {
     editorView.focus();
 
     return () => {
-      editorView.dom.removeEventListener('mousedown', handlePointerDown);
-      editorView.dom.removeEventListener('touchstart', handlePointerDown);
+      editorView.dom.removeEventListener('touchstart', handleTouchStart);
+      editorView.dom.removeEventListener('touchmove', handleTouchMove);
       clearTimeout(pointerScrollLockTimerRef.current);
       editorView.destroy();
       viewRef.current = null;
