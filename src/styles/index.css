@@ -387,7 +387,20 @@ button {
 .editor-shell .screenplay-head, .screenplay > .screenplay-head {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
 }
-.editor-beat-nav { display: flex; gap: 6px; flex-shrink: 0; }
+.editor-beat-nav { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.editor-page-range {
+  font-size: 11px; font-weight: 600; color: var(--text-muted);
+  padding: 6px 10px; white-space: nowrap;
+}
+.page-break-marker {
+  display: flex; align-items: center; gap: 10px;
+  margin: 22px -44px; padding: 0 44px;
+  color: var(--text-dim); font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; user-select: none;
+}
+.page-break-marker::before, .page-break-marker::after {
+  content: ''; flex: 1; height: 1px; background: var(--border-alt);
+}
 .editor-beat-nav-btn {
   display: flex; align-items: center; gap: 4px;
   padding: 6px 10px; border-radius: 5px;

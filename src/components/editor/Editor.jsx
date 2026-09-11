@@ -13,6 +13,8 @@ import SlashMenu from '../../editor/slashMenu/SlashMenu.jsx';
 import { findBlockById } from '../../editor/docUtils.js';
 import { emptyDoc } from '../../editor/docJson.js';
 import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
+import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
+import { computeScriptPagination } from '../../export/paginate.js';
 
 // Not read reactively: the document loaded here becomes the live editing
 // session's own state. Edits flow *out* to ProjectContext
@@ -48,6 +50,7 @@ export default function Editor() {
   const initialDocRef = useRef(card?.sceneDoc ?? emptyDoc());
   const initialTargetRef = useRef(view.payload);
   const [slashState, setSlashState] = useState(null);
+  const [pageRange, setPageRange] = useState(null); // { start, end, total } | null
 
   useEffect(() => {
     if (!card) return undefined;
@@ -60,6 +63,7 @@ export default function Editor() {
         autoCapsPlugin(),
         placeholderPlugin(),
         fountainPastePlugin(),
+        pageBreakPlugin(),
       ],
     });
 
@@ -88,7 +92,17 @@ export default function Editor() {
       if (found) {
         const endPos = found.pos + 1 + found.node.content.size;
         const sel = TextSelection.near(editorView.state.doc.resolve(endPos), -1);
-        editorView.dispatch(editorView.state.tr.setSelection(sel).scrollIntoView());
+        editorView.dispatch(editorView.state.tr.setSelection(sel));
+        // scrollIntoView() right here measures against a layout that hasn't
+        // settled yet -- the .editor-scroll container was just mounted this
+        // same tick, so it (wrongly) no-ops instead of scrolling. Typing
+        // afterwards "fixed" it only because the browser's own native
+        // caret-follow scrolling kicks in for real keystrokes, independent of
+        // this. Deferring to the next animation frame gives layout a chance
+        // to settle first, so the very first scroll attempt actually lands.
+        requestAnimationFrame(() => {
+          editorView.dispatch(editorView.state.tr.scrollIntoView());
+        });
       }
     }
     editorView.focus();
@@ -99,6 +113,42 @@ export default function Editor() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Recomputes where this scene's blocks fall in the exported PDF's page
+  // count -- across the *whole* script, not just this scene, since a page
+  // break can land here purely because of how much came before it in
+  // earlier beats. Debounced so a fast typist isn't re-running full-script
+  // pagination (which re-measures every block's text wrapping) on every
+  // keystroke; it only needs to be eventually consistent, not live.
+  const firstPaginationRef = useRef(true);
+  useEffect(() => {
+    const ids = new Set((card?.sceneDoc?.content ?? []).map((n) => n.attrs?.id).filter(Boolean));
+    if (!ids.size) {
+      setPageRange(null);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      const { blocks, totalPages } = computeScriptPagination(project);
+      const mine = blocks.filter((b) => ids.has(b.id));
+      if (!mine.length) return;
+      const pages = mine.map((b) => b.page);
+      setPageRange({ start: Math.min(...pages), end: Math.max(...pages), total: totalPages });
+      const breaks = mine.filter((b) => b.startsNewPage);
+      viewRef.current?.dispatch(viewRef.current.state.tr.setMeta(pageBreakKey, breaks));
+      // Inserting a marker can push content (and the caret) down enough to
+      // scroll it back out of view -- only matters for the very first
+      // pagination pass right after opening via a specific line (see the
+      // scrollIntoView fix above); re-nudge it back into view just this once
+      // rather than fighting the user's scroll position on every later edit.
+      if (firstPaginationRef.current && initialTargetRef.current?.blockId) {
+        requestAnimationFrame(() => {
+          viewRef.current?.dispatch(viewRef.current.state.tr.scrollIntoView());
+        });
+      }
+      firstPaginationRef.current = false;
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [project, card]);
 
   const target = view.payload;
 
@@ -122,6 +172,12 @@ export default function Editor() {
             </div>
           </div>
           <div className="editor-beat-nav">
+            {pageRange && (
+              <span className="editor-page-range" title="Script page(s) this beat spans, and the script's total page count">
+                {pageRange.start === pageRange.end ? `Page ${pageRange.start}` : `Pages ${pageRange.start}–${pageRange.end}`}
+                {' '}of {pageRange.total}
+              </span>
+            )}
             <button
               className="editor-beat-nav-btn"
               disabled={!prevCard}

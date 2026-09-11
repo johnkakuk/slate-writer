@@ -35,6 +35,12 @@ export default function ProjectSwitcher() {
   }
 
   function startRename(id, name) {
+    // The rename input lives in the (CSS-hidden-when-closed) dropdown list --
+    // right-clicking the trigger itself can request a rename while the
+    // dropdown is still closed, so make sure it's open or the input would be
+    // invisible.
+    setOpen(true);
+    setQuery('');
     setRenamingId(id);
     setRenameValue(name);
   }
@@ -49,7 +55,14 @@ export default function ProjectSwitcher() {
 
   return (
     <div className={`project${open ? ' open' : ''}`}>
-      <button className="project-trigger" onClick={() => setOpen((o) => !o)}>
+      <button
+        className="project-trigger"
+        onClick={() => setOpen((o) => !o)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openProjectMenu(currentProjectId, currentName, e.clientX, e.clientY);
+        }}
+      >
         <span>{currentName}</span>
         <span className="project-chevron">▾</span>
       </button>
