@@ -119,6 +119,48 @@ export default function Editor() {
   // anchor update.
   const programmaticScrollRef = useRef(false);
 
+  // Defends against ANY scroll drift while a tap/click is being resolved --
+  // not just this component's own scrollToFraction calls, but also
+  // WebKit's own native "scroll the focused/selected point into view"
+  // behavior, which fires independently of anything dispatched through
+  // ProseMirror and previously slipped past the pointer/scrollIntoView
+  // split below entirely. Tapping/clicking a line is only supposed to move
+  // which line is active, never the scroll position itself.
+  //
+  // Set to the scrollTop measured at the very start of the gesture
+  // (mousedown/touchstart, before any focus-driven autoscroll can happen)
+  // and cleared a short beat after the gesture's last pointer-tagged
+  // transaction settles -- long enough to also cover touchCaretPlugin's
+  // next-animation-frame correction, which is part of the same tap. While
+  // set, the scroll listener below snaps any drift straight back instead
+  // of reading it as a deliberate manual scroll.
+  const pointerScrollLockRef = useRef(null);
+  const pointerScrollLockTimerRef = useRef(null);
+
+  function lockScrollAgainstPointer() {
+    const scrollEl = mountRef.current?.closest('.editor-scroll');
+    if (!scrollEl) return;
+    pointerScrollLockRef.current = scrollEl.scrollTop;
+    clearTimeout(pointerScrollLockTimerRef.current);
+    pointerScrollLockTimerRef.current = setTimeout(() => {
+      pointerScrollLockRef.current = null;
+    }, 500);
+  }
+
+  // Forces scrollTop back to the locked value, if it's drifted -- called
+  // right after a pointer-tagged transaction settles, and again a couple of
+  // frames later to also catch autoscroll that lands after layout settles
+  // (the same class of timing WebKit needs for touchCaretPlugin's own
+  // correction).
+  function reassertScrollLock(scrollEl) {
+    if (pointerScrollLockRef.current == null || !scrollEl) return;
+    const locked = pointerScrollLockRef.current;
+    if (scrollEl.scrollTop !== locked) {
+      programmaticScrollRef.current = true;
+      scrollEl.scrollTop = locked;
+    }
+  }
+
   // Scrolls so the current selection lands at a given fractional position
   // down the .editor-scroll viewport (0 = top, 1 = bottom). Used two ways:
   // centering the line when arriving here from a Screenplay-view line
@@ -200,6 +242,22 @@ export default function Editor() {
         if (typewriterModeRef.current) {
           if (tr.getMeta('pointer')) {
             adoptCurrentFractionAsAnchor(editorView);
+            const scrollEl = mountRef.current?.closest('.editor-scroll');
+            reassertScrollLock(scrollEl);
+            // Extend the lock past this transaction -- touchCaretPlugin's
+            // own correction (same tap, same gesture) hasn't necessarily
+            // run yet, and native autoscroll can still land a frame or two
+            // from now.
+            clearTimeout(pointerScrollLockTimerRef.current);
+            if (pointerScrollLockRef.current != null) {
+              pointerScrollLockTimerRef.current = setTimeout(() => {
+                pointerScrollLockRef.current = null;
+              }, 500);
+            }
+            requestAnimationFrame(() => {
+              reassertScrollLock(scrollEl);
+              requestAnimationFrame(() => reassertScrollLock(scrollEl));
+            });
           } else {
             scrollToFraction(editorView, typewriterAnchorRef.current);
           }
@@ -207,6 +265,11 @@ export default function Editor() {
       },
     });
     viewRef.current = editorView;
+    function handlePointerDown() {
+      if (typewriterModeRef.current) lockScrollAgainstPointer();
+    }
+    editorView.dom.addEventListener('mousedown', handlePointerDown);
+    editorView.dom.addEventListener('touchstart', handlePointerDown, { passive: true });
     setSlashState(slashMenuKey.getState(editorView.state));
     editorView.dispatch(
       editorView.state.tr.setMeta(activeLineKey, {
@@ -259,6 +322,9 @@ export default function Editor() {
     editorView.focus();
 
     return () => {
+      editorView.dom.removeEventListener('mousedown', handlePointerDown);
+      editorView.dom.removeEventListener('touchstart', handlePointerDown);
+      clearTimeout(pointerScrollLockTimerRef.current);
       editorView.destroy();
       viewRef.current = null;
     };
@@ -332,6 +398,13 @@ export default function Editor() {
     function handleScroll() {
       if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
+        return;
+      }
+      // A tap/click is still being resolved (see pointerScrollLockRef) --
+      // this drift is native autoscroll-on-focus, not the user manually
+      // scrolling, so snap it back instead of adopting it as a new anchor.
+      if (pointerScrollLockRef.current != null) {
+        reassertScrollLock(scrollEl);
         return;
       }
       if (!typewriterModeRef.current || !viewRef.current) return;
