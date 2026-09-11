@@ -204,8 +204,8 @@ export default function BeatCard({ card, actId, number }) {
       onTouchEnd={longPress.onTouchEnd}
       onTouchCancel={longPress.onTouchCancel}
     >
+      <TouchDragHandle dragRef={dragHandleRef} corner="top-left" />
       <div className="beat-card-actions">
-        <TouchDragHandle dragRef={dragHandleRef} />
         <button
           className="beat-card-icon-btn"
           title="Delete"

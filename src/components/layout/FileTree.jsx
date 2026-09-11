@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import { titleFromMarkdown } from '../../utils/markdown.js';
 import { useLongPress } from '../../utils/useLongPress.js';
-import { useTouchDragHandle } from '../../utils/useTouchDragHandle.js';
-import { isTouchPlatform } from '../../utils/platform.js';
-import TouchDragHandle from '../shared/TouchDragHandle.jsx';
+import { useLongPressOrDrag } from '../../utils/useLongPressOrDrag.js';
 
 function DocFolder({
   docType,
@@ -23,34 +21,33 @@ function DocFolder({
   onTouchDrop,
 }) {
   const [open, setOpen] = useState(true);
-  const longPress = useLongPress((x, y) => onLongPress(x, y, docType));
-  const dragHandleRef = useTouchDragHandle({
+  // No dedicated drag handle here (contrast BeatCard.jsx) -- a folder row
+  // holding still for the full long-press duration before any movement is
+  // what arms a drag, so a normal scroll swipe (which starts moving almost
+  // immediately) never gets hijacked. See useLongPressOrDrag.js.
+  const rowRef = useLongPressOrDrag({
+    onLongPress: (x, y) => onLongPress(x, y, docType),
     onDragStart: () => onDragStart(),
     onDragMove: onTouchDragMove,
     onDrop: onTouchDrop,
-    enabled: isTouchPlatform(),
   });
 
   return (
     <>
       {showIndicatorBefore && <div className="drop-indicator" />}
       <div
+        ref={rowRef}
         className={`folder-row${isDragging ? ' dragging' : ''}`}
         draggable
         data-doctype-id={docType.id}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onContextMenu={onContextMenu}
-        onTouchStart={longPress.onTouchStart}
-        onTouchMove={longPress.onTouchMove}
-        onTouchEnd={longPress.onTouchEnd}
-        onTouchCancel={longPress.onTouchCancel}
       >
         <button className="folder" onClick={() => setOpen((o) => !o)}>
           <span className="folder-icon">{open ? '▾' : '▸'}</span>
           {docType.pluralLabel}
         </button>
-        <TouchDragHandle dragRef={dragHandleRef} />
         <button className="folder-add" onClick={onAdd} title={`Add ${docType.singularLabel}`}>
           +
         </button>

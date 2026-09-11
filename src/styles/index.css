@@ -404,6 +404,12 @@ button {
   display: flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; color: var(--text-dim); touch-action: none;
 }
+/* Floats the handle in a corner of the nearest position: relative ancestor
+   instead of sitting inline in normal flow -- see the `corner` prop on
+   TouchDragHandle.jsx. Used to keep it visually distinct from an unrelated
+   cluster of controls (BeatCard's delete/edit/flag icons), not grouped in
+   with them. */
+.touch-drag-handle-top-left { position: absolute; top: 8px; left: 8px; }
 
 .drop-indicator {
   height: 3px; border-radius: 2px;
