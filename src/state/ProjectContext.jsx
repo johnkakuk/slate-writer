@@ -187,6 +187,10 @@ export function ProjectProvider({ children }) {
     FONT_BY_ID[persisted?.scriptFontId] ? persisted.scriptFontId : DEFAULT_FONT_ID
   );
   const [typewriterMode, setTypewriterMode] = useState(() => persisted?.typewriterMode === true);
+  const VALID_HIGHLIGHT_STYLES = ['paragraph', 'sentence', 'underline', 'none'];
+  const [typewriterHighlightStyle, setTypewriterHighlightStyle] = useState(() =>
+    VALID_HIGHLIGHT_STYLES.includes(persisted?.typewriterHighlightStyle) ? persisted.typewriterHighlightStyle : 'paragraph'
+  );
   // Where the active line sticks, as a fraction of the Editor's viewport
   // height (0 = top, 1 = bottom) -- deliberately NOT persisted to disk like
   // the mode toggle itself. It's meant to be "wherever you last scrolled it
@@ -249,6 +253,9 @@ export function ProjectProvider({ children }) {
         setFontId(FONT_BY_ID[data.fontId] ? data.fontId : DEFAULT_FONT_ID);
         setScriptFontId(FONT_BY_ID[data.scriptFontId] ? data.scriptFontId : DEFAULT_FONT_ID);
         setTypewriterMode(data.typewriterMode === true);
+        setTypewriterHighlightStyle(
+          VALID_HIGHLIGHT_STYLES.includes(data.typewriterHighlightStyle) ? data.typewriterHighlightStyle : 'paragraph'
+        );
         const builtProjects = buildInitialProjects(data);
         setProjects(builtProjects);
         setCurrentProjectId(
@@ -307,6 +314,7 @@ export function ProjectProvider({ children }) {
           fontId,
           scriptFontId,
           typewriterMode,
+          typewriterHighlightStyle,
           lastSavedAt: savedAt,
         })
       );
@@ -314,7 +322,7 @@ export function ProjectProvider({ children }) {
       // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode, ready]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode, typewriterHighlightStyle, ready]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -834,6 +842,8 @@ export function ProjectProvider({ children }) {
       setScriptFontId,
       typewriterMode,
       setTypewriterMode,
+      typewriterHighlightStyle,
+      setTypewriterHighlightStyle,
       typewriterAnchor,
       setTypewriterAnchor,
       project,
@@ -917,6 +927,7 @@ export function ProjectProvider({ children }) {
       fontId,
       scriptFontId,
       typewriterMode,
+      typewriterHighlightStyle,
       typewriterAnchor,
       project,
       projects,

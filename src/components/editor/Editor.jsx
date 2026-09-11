@@ -14,6 +14,7 @@ import { findBlockById } from '../../editor/docUtils.js';
 import { emptyDoc } from '../../editor/docJson.js';
 import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
+import { touchCaretPlugin } from '../../editor/touchCaretPlugin.js';
 import { activeLinePlugin, activeLineKey } from '../../editor/activeLinePlugin.js';
 import { computeScriptPagination } from '../../export/paginate.js';
 
@@ -40,6 +41,7 @@ export default function Editor() {
     navigate,
     updateCardSceneDoc,
     typewriterMode,
+    typewriterHighlightStyle,
     typewriterAnchor,
     setTypewriterAnchor,
   } = useProject();
@@ -76,10 +78,14 @@ export default function Editor() {
   // would tear down and recreate the whole ProseMirror view) -- same
   // pattern as initialDocRef/initialTargetRef.
   const typewriterModeRef = useRef(typewriterMode);
+  const typewriterHighlightStyleRef = useRef(typewriterHighlightStyle);
   const typewriterAnchorRef = useRef(typewriterAnchor);
   useEffect(() => {
     typewriterModeRef.current = typewriterMode;
   }, [typewriterMode]);
+  useEffect(() => {
+    typewriterHighlightStyleRef.current = typewriterHighlightStyle;
+  }, [typewriterHighlightStyle]);
   useEffect(() => {
     typewriterAnchorRef.current = typewriterAnchor;
   }, [typewriterAnchor]);
@@ -144,6 +150,7 @@ export default function Editor() {
         fountainPastePlugin(),
         pageBreakPlugin(),
         activeLinePlugin(),
+        touchCaretPlugin(),
       ],
     });
 
@@ -178,7 +185,12 @@ export default function Editor() {
     });
     viewRef.current = editorView;
     setSlashState(slashMenuKey.getState(editorView.state));
-    editorView.dispatch(editorView.state.tr.setMeta(activeLineKey, typewriterModeRef.current));
+    editorView.dispatch(
+      editorView.state.tr.setMeta(activeLineKey, {
+        enabled: typewriterModeRef.current,
+        style: typewriterHighlightStyleRef.current,
+      })
+    );
 
     // Only a click on a specific Screenplay-view line carries a blockId to
     // scroll to a precise spot within the scene; opening from a beat card
@@ -269,18 +281,21 @@ export default function Editor() {
     return () => clearTimeout(timer);
   }, [project, card]);
 
-  // Handles toggling Typewriter Mode on/off *while this card is already
-  // open* (the mount effect above only covers arriving with it already on).
-  // Flips the active-line highlight and, if it just turned on, immediately
-  // snaps the current caret to the anchor rather than waiting for the next
-  // edit or scroll to trigger a correction.
+  // Handles toggling Typewriter Mode on/off, and changing its highlight
+  // style, *while this card is already open* (the mount effect above only
+  // covers arriving with a setting already applied). Flips the active-line
+  // highlight and, if the mode just turned on, immediately snaps the
+  // current caret to the anchor rather than waiting for the next edit or
+  // scroll to trigger a correction.
   useEffect(() => {
     const editorView = viewRef.current;
     if (!editorView) return;
-    editorView.dispatch(editorView.state.tr.setMeta(activeLineKey, typewriterMode));
+    editorView.dispatch(
+      editorView.state.tr.setMeta(activeLineKey, { enabled: typewriterMode, style: typewriterHighlightStyle })
+    );
     if (typewriterMode) scrollToFraction(editorView, typewriterAnchorRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typewriterMode]);
+  }, [typewriterMode, typewriterHighlightStyle]);
 
   // While Typewriter Mode is on, a manual scroll (trackpad/wheel/scrollbar
   // -- anything that isn't this component's own corrective scrollTop writes,

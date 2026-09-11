@@ -7,9 +7,26 @@ const THEME_OPTIONS = [
   { value: 'light', label: 'Light', hint: 'Day mode' },
 ];
 
+const HIGHLIGHT_STYLE_OPTIONS = [
+  { value: 'paragraph', label: 'Paragraph', hint: 'Full-width highlight' },
+  { value: 'sentence', label: 'Sentence', hint: 'Just the current sentence' },
+  { value: 'underline', label: 'Underline', hint: 'No background fill' },
+  { value: 'none', label: 'None', hint: 'Sticky scroll only' },
+];
+
 export default function SettingsView() {
-  const { theme, setTheme, fontId, setFontId, scriptFontId, setScriptFontId, typewriterMode, setTypewriterMode } =
-    useProject();
+  const {
+    theme,
+    setTheme,
+    fontId,
+    setFontId,
+    scriptFontId,
+    setScriptFontId,
+    typewriterMode,
+    setTypewriterMode,
+    typewriterHighlightStyle,
+    setTypewriterHighlightStyle,
+  } = useProject();
 
   return (
     <div className="settings-view">
@@ -73,6 +90,24 @@ export default function SettingsView() {
           <div className="settings-field-hint">
             Scroll the Editor while writing to reposition where the active line sticks.
           </div>
+
+          {typewriterMode && (
+            <>
+              <div className="settings-subsection-label">Active Line Highlight</div>
+              <div className="theme-toggle">
+                {HIGHLIGHT_STYLE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    className={`theme-toggle-btn${typewriterHighlightStyle === opt.value ? ' active' : ''}`}
+                    onClick={() => setTypewriterHighlightStyle(opt.value)}
+                  >
+                    <span className="theme-toggle-label">{opt.label}</span>
+                    <span className="theme-toggle-hint">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

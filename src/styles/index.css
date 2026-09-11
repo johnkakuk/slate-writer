@@ -113,6 +113,13 @@ button {
      home indicator on iOS. A no-op everywhere else (env() falls back to 0). */
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
+  /* Makes this the containing block for the sidebar's overlay positioning
+     below 820px (position: absolute; top: 0; bottom: 0) -- without this,
+     that measures against the next positioned ancestor up (or the
+     viewport itself), ignoring this element's own safe-area padding, so
+     the overlay's top/bottom didn't actually line up with the content
+     beside it on a notched device. */
+  position: relative;
 }
 /* Native (iOS) only, and only for the brief window before the async SQLite
    read resolves -- see ProjectContext.jsx's bootstrap effect. */
@@ -144,7 +151,13 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 8px 10px 14px;
+  /* A fixed height (not min-height) -- .collapse-btn alone is 25px tall,
+     which combined with any vertical padding already exceeded a min-height
+     of 47px, so that never actually bound the box to .topbar's real
+     height. Fixed height + align-items: center sidesteps needing the
+     padding/content math to coincidentally add up right. */
+  height: 47px;
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   font-weight: 700;
@@ -307,8 +320,13 @@ button {
    responsiveness concern, not a layout-shift one. */
 .topbar {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
-  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
-  min-height: 47px;
+  /* Fixed height, not min-height -- the reopen-btn shown when the sidebar
+     is collapsed is 26px tall, which combined with vertical padding
+     exceeded a min-height of 47px in that state, same issue as
+     .sidebar-h. Fixed height keeps both headers exactly equal regardless
+     of what's currently showing in either. */
+  height: 47px;
+  padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
 }
 .topbar-left { display: flex; align-items: center; gap: 8px; justify-self: start; }
 .topbar-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); justify-self: center; }
@@ -528,6 +546,19 @@ button {
   top: 0; bottom: 0; left: -2000px; right: -2000px;
   background: var(--accent-hover-bg);
   z-index: -1;
+}
+
+/* Typewriter Mode's other two highlight styles (Settings > Editor) --
+   .active-line above is "paragraph". Both are plain inline/background
+   styling with no bleed trick: unlike a whole paragraph, a single sentence
+   or an underline reads as *of* the text, not as an ambient full-width
+   band, so there's no page-edge-to-page-edge effect to reproduce here. */
+.active-sentence { background: var(--accent-hover-bg); border-radius: 2px; }
+.active-line-underline {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 /* ---------------- Title page ---------------- */
@@ -895,10 +926,16 @@ button {
 
 /* Larger tap targets on touch (Apple HIG recommends ~44pt minimum) -- the
    desktop sizing (e.g. 22px icon buttons meant for a precise mouse cursor)
-   is too small to reliably hit with a fingertip. Bumps the *tappable* box
-   via padding/min-size without changing the icons' own visual weight. */
+   is too small to reliably hit with a fingertip. Bumps the tappable box via
+   size, and scales the icon glyph inside it up to match -- leaving the
+   glyph at its desktop size (~12px) inside a much bigger 38px box left it
+   looking lost/sparse, noticeably more "empty padding" around a tiny icon
+   rather than a bigger tappable icon, which read as the button spacing
+   itself being off even though that part (2px gaps) was already correct. */
 .touch-platform .beat-card-icon-btn { width: 38px; height: 38px; }
+.touch-platform .beat-card-icon-btn svg { width: 20px; height: 20px; }
 .touch-platform .touch-drag-handle { width: 38px; height: 38px; }
+.touch-platform .touch-drag-handle svg { width: 22px; height: 22px; }
 .touch-platform .folder-add,
 .touch-platform .files-h-add,
 .touch-platform .collapse-btn {
