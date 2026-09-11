@@ -12,18 +12,23 @@
 import { jsPDF } from 'jspdf';
 import { ELEMENT_TYPE_BY_NAME } from '../editor/elementTypes.js';
 
-const PT = 72; // points per inch
+// Layout constants and the pagination math (blanksBefore, flattenScript) are
+// also used outside this module -- src/export/paginate.js reuses them to
+// show live page-break markers in the Editor, so that preview always
+// matches this export exactly instead of drifting out of sync with a
+// second, hand-copied implementation.
+export const PT = 72; // points per inch
 const PAGE_W = 8.5 * PT;
-const PAGE_H = 11 * PT;
-const MARGIN_TOP = 1 * PT;
-const MARGIN_BOTTOM = 1 * PT;
-const RIGHT_EDGE = PAGE_W - 1 * PT; // 7.5in from the left page edge
-const FONT_SIZE = 12;
-const LINE_HEIGHT = 12; // 6 lines/inch -- standard single-spaced Courier 12pt
+export const PAGE_H = 11 * PT;
+export const MARGIN_TOP = 1 * PT;
+export const MARGIN_BOTTOM = 1 * PT;
+export const RIGHT_EDGE = PAGE_W - 1 * PT; // 7.5in from the left page edge
+export const FONT_SIZE = 12;
+export const LINE_HEIGHT = 12; // 6 lines/inch -- standard single-spaced Courier 12pt
 
 // Left edge (and, where relevant, width) of each element type, in points
 // from the page's left edge -- the conventional Final Draft-style indents.
-const LAYOUT = {
+export const LAYOUT = {
   scene_heading: { left: 1.5 * PT, width: 6 * PT },
   action: { left: 1.5 * PT, width: 6 * PT },
   character: { left: 3.7 * PT },
@@ -36,7 +41,7 @@ const LAYOUT = {
 // which it stays glued -- no blank line inserted before it. Every other
 // transition gets one blank line before it, matching how a real script
 // visually separates scene headings, action, and each new speaker.
-const TIGHT_AFTER = {
+export const TIGHT_AFTER = {
   dialogue: new Set(['character', 'parenthetical']),
   parenthetical: new Set(['character', 'dialogue']),
 };
@@ -51,24 +56,28 @@ const BOLD_TYPES = new Set(['scene_heading', 'character', 'transition']);
 // transition -- real scripts (and the in-app Screenplay view's own 16px
 // top margin on .sp-scene, vs. ~12px for everything else) give a new scene
 // more visual breathing room than just "next line, next character."
-function blanksBefore(type, prevType) {
+export function blanksBefore(type, prevType) {
   if (prevType === null) return 0;
   if (type === 'scene_heading') return 2;
   return TIGHT_AFTER[type]?.has(prevType) ? 0 : 1;
 }
 
-function nodeText(node) {
+export function nodeText(node) {
   return (node.content ?? []).map((c) => c.text ?? '').join('');
 }
 
-function flattenScript(project) {
+// `id` carries each block's ProseMirror node id (node.attrs.id) through
+// flattening -- unused by the PDF export itself, but it's what lets
+// paginate.js map a computed page number back to a specific block in the
+// live Editor.
+export function flattenScript(project) {
   const blocks = [];
   for (const act of project.acts) {
     for (const card of act.cards) {
       for (const node of card.sceneDoc?.content ?? []) {
         const text = nodeText(node).trim();
         if (!text || !ELEMENT_TYPE_BY_NAME[node.type]) continue;
-        blocks.push({ type: node.type, text });
+        blocks.push({ id: node.attrs?.id, type: node.type, text });
       }
     }
   }

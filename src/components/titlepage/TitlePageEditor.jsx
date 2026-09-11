@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
+import { exportScreenplayPdf } from '../../export/screenplayPdf.js';
 
 // Deliberately plain <input>/<textarea> fields rather than the app's usual
 // contentEditable spans -- this is short structured metadata, not prose, and
@@ -8,14 +9,32 @@ import { useProject } from '../../state/ProjectContext.jsx';
 // src/export/screenplayPdf.js), laid out the same way (centered title block,
 // contact info bottom-left, draft info bottom-right).
 export default function TitlePageEditor() {
-  const { project, updateTitlePage } = useProject();
+  const { project, updateTitlePage, showToast } = useProject();
   const tp = project.titlePage ?? {};
+  const [exporting, setExporting] = useState(false);
 
   function field(key) {
     return {
       value: tp[key] ?? '',
       onChange: (e) => updateTitlePage({ [key]: e.target.value }),
     };
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      // Yield a frame so the "Exporting…" label actually paints before the
+      // (synchronous) PDF build work blocks the thread -- same as the
+      // Screenplay view's own Export PDF button.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      exportScreenplayPdf(project);
+      showToast(`Exported “${project.name}.pdf”`);
+    } catch (err) {
+      console.error(err);
+      showToast('Export failed — see console for details');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -25,6 +44,9 @@ export default function TitlePageEditor() {
           <div className="board-title">Title Page</div>
           <div className="board-sub">This is exactly what prints on the first page of the exported PDF.</div>
         </div>
+        <button className="export-btn" onClick={handleExport} disabled={exporting}>
+          {exporting ? 'Exporting…' : 'Export PDF'}
+        </button>
       </div>
       <div className="screenplay-scroll">
         <div className="screenplay-page title-page">

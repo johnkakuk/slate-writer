@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 
 function TrashIcon() {
@@ -49,21 +49,8 @@ function FlagIcon({ filled }) {
 export default function BeatCard({ card, actId, number }) {
   const { dragState, beginDrag, endDrag, navigate, updateCard, openCardMenu, requestDeleteCard } = useProject();
   const [editingField, setEditingField] = useState(null); // 'title' | 'description' | null
-  const editingSinceRef = useRef(0);
   const isDragging = dragState?.cardId === card.id;
   const editing = editingField !== null;
-
-  // A double-click's *first* click already focuses whichever field it lands
-  // on (same as a plain single click would) before the dblclick event ever
-  // fires -- so "is a field focused" can't by itself tell a genuinely
-  // in-progress edit (user has been typing, then double-clicks to select a
-  // word) apart from a fresh double-click that just happens to land on text
-  // (user wants the Editor). Telling them apart by *how long* the field has
-  // been focused fixes it: freshly-focused-by-this-very-click still opens
-  // the Editor; focused for a while means it's a real edit in progress.
-  function isFreshFocus() {
-    return editing && Date.now() - editingSinceRef.current < 500;
-  }
 
   function openEditor() {
     navigate('editor', { actId, cardId: card.id, label: card.title, source: 'beat card' });
@@ -76,13 +63,18 @@ export default function BeatCard({ card, actId, number }) {
   }
 
   function handleCardDoubleClick() {
-    if (editing && !isFreshFocus()) return;
+    if (editing) return;
     openEditor();
   }
 
+  // Double/triple-click on the title or description text is always a normal
+  // text selection (word / line) -- never opens the Editor. Only a
+  // double-click on the card's background (this handler bubbling up
+  // unblocked) does that. Stopping propagation here just keeps the click off
+  // the card-level handler; it doesn't preventDefault, so the browser's own
+  // double-click-selects-word / triple-click-selects-line behavior proceeds.
   function handleFieldDoubleClick(e) {
-    if (isFreshFocus()) return; // let it bubble up to open the Editor
-    e.stopPropagation(); // genuinely mid-edit -- treat as a normal word-select
+    e.stopPropagation();
   }
 
   function handleContextMenu(e) {
@@ -183,10 +175,7 @@ export default function BeatCard({ card, actId, number }) {
         contentEditable
         suppressContentEditableWarning
         spellCheck={false}
-        onFocus={() => {
-          editingSinceRef.current = Date.now();
-          setEditingField('title');
-        }}
+        onFocus={() => setEditingField('title')}
         onBlur={handleTitleBlur}
         onKeyDown={handleFieldKeyDown}
         onMouseDown={blockRightClickFocus}
@@ -199,10 +188,7 @@ export default function BeatCard({ card, actId, number }) {
         contentEditable
         suppressContentEditableWarning
         spellCheck={false}
-        onFocus={() => {
-          editingSinceRef.current = Date.now();
-          setEditingField('description');
-        }}
+        onFocus={() => setEditingField('description')}
         onBlur={handleDescBlur}
         onKeyDown={handleFieldKeyDown}
         onMouseDown={blockRightClickFocus}

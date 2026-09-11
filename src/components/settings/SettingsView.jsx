@@ -8,7 +8,8 @@ const THEME_OPTIONS = [
 ];
 
 export default function SettingsView() {
-  const { theme, setTheme, fontId, setFontId, scriptFontId, setScriptFontId } = useProject();
+  const { theme, setTheme, fontId, setFontId, scriptFontId, setScriptFontId, typewriterMode, setTypewriterMode } =
+    useProject();
 
   return (
     <div className="settings-view">
@@ -47,6 +48,30 @@ export default function SettingsView() {
               <FontSelect value={scriptFontId} onChange={setScriptFontId} />
               <div className="settings-field-hint">The script itself — the Editor and the Screenplay view.</div>
             </div>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <div className="settings-section-label">Editor</div>
+          <div className="settings-subsection-label">Typewriter Mode</div>
+          <div className="theme-toggle">
+            <button
+              className={`theme-toggle-btn${!typewriterMode ? ' active' : ''}`}
+              onClick={() => setTypewriterMode(false)}
+            >
+              <span className="theme-toggle-label">Off</span>
+              <span className="theme-toggle-hint">Normal scrolling</span>
+            </button>
+            <button
+              className={`theme-toggle-btn${typewriterMode ? ' active' : ''}`}
+              onClick={() => setTypewriterMode(true)}
+            >
+              <span className="theme-toggle-label">On</span>
+              <span className="theme-toggle-hint">Active line stays put as you write</span>
+            </button>
+          </div>
+          <div className="settings-field-hint">
+            Scroll the Editor while writing to reposition where the active line sticks.
           </div>
         </div>
       </div>

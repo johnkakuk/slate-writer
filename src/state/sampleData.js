@@ -219,19 +219,3 @@ export function createEmptyProject(name) {
   };
 }
 
-// Seeds the project switcher on first run. Only "Long Way Down" (the first
-// entry) gets real content — the rest are provisioned as empty template
-// projects up front, so the switcher is backed by real, switchable projects
-// instead of decorative names.
-export const SEED_PROJECT_NAMES = [
-  'Long Way Down',
-  'Diner Scene — Short',
-  'Highway Confession',
-  'The Rewrite Room — Pilot',
-  'Untitled Feature Draft',
-  'Spec Script — Half Hour',
-  'Adaptation — Working Title',
-  'Table Read Notes',
-  'Old Pilot Draft',
-  'Archive — 2024 Draft',
-];

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES, defaultTitlePage, defaultDocTypes } from './sampleData.js';
+import { createSampleProject, createEmptyProject, defaultTitlePage, defaultDocTypes } from './sampleData.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
@@ -7,13 +7,38 @@ import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
+// Under Electron, `window.slateStorage` (see electron/preload.cjs) backs
+// this with a real SQLite file instead of localStorage -- see
+// electron/main.cjs for why. The web build (and the Capacitor iOS build)
+// has no such bridge, so it keeps using localStorage directly.
 function loadPersisted() {
   try {
+    if (window.slateStorage) {
+      const raw = window.slateStorage.loadSync();
+      if (raw) return JSON.parse(raw);
+      // First launch under SQLite-backed storage: carry over anything an
+      // older, localStorage-backed build of the app already saved to this
+      // machine, so switching storage engines doesn't orphan in-progress
+      // work. A no-op once the migration has run once (SQLite won't be
+      // empty on the next launch).
+      const legacyRaw = localStorage.getItem(STORAGE_KEY);
+      if (!legacyRaw) return null;
+      window.slateStorage.save(legacyRaw);
+      return JSON.parse(legacyRaw);
+    }
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
     return null;
+  }
+}
+
+function savePersisted(json) {
+  if (window.slateStorage) {
+    window.slateStorage.save(json);
+  } else {
+    localStorage.setItem(STORAGE_KEY, json);
   }
 }
 
@@ -119,12 +144,7 @@ function buildInitialProjects(persisted) {
     };
   }
   const sample = createSampleProject();
-  const map = { [sample.id]: sample };
-  for (const name of SEED_PROJECT_NAMES.slice(1)) {
-    const p = createEmptyProject(name);
-    map[p.id] = p;
-  }
-  return map;
+  return { [sample.id]: sample };
 }
 
 const ProjectContext = createContext(null);
@@ -144,6 +164,14 @@ export function ProjectProvider({ children }) {
   const [scriptFontId, setScriptFontId] = useState(() =>
     FONT_BY_ID[persisted?.scriptFontId] ? persisted.scriptFontId : DEFAULT_FONT_ID
   );
+  const [typewriterMode, setTypewriterMode] = useState(() => persisted?.typewriterMode === true);
+  // Where the active line sticks, as a fraction of the Editor's viewport
+  // height (0 = top, 1 = bottom) -- deliberately NOT persisted to disk like
+  // the mode toggle itself. It's meant to be "wherever you last scrolled it
+  // to," which should carry over between beats in the same sitting (so it
+  // lives here, in Provider state, not component state that resets on every
+  // Editor remount) but isn't important enough to survive an app relaunch.
+  const [typewriterAnchor, setTypewriterAnchor] = useState(0.5);
   const [projects, setProjects] = useState(() => buildInitialProjects(persisted));
   const [currentProjectId, setCurrentProjectId] = useState(() => {
     if (persisted?.currentProjectId && projects[persisted.currentProjectId]) {
@@ -199,8 +227,7 @@ export function ProjectProvider({ children }) {
     const savedAt = Date.now();
     setLastSavedAt(savedAt);
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
+      savePersisted(
         JSON.stringify({
           projects,
           currentProjectId,
@@ -208,14 +235,15 @@ export function ProjectProvider({ children }) {
           theme,
           fontId,
           scriptFontId,
+          typewriterMode,
           lastSavedAt: savedAt,
         })
       );
     } catch {
-      // localStorage unavailable (private mode, quota, etc.) — skip persistence silently.
+      // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -723,6 +751,10 @@ export function ProjectProvider({ children }) {
       setFontId,
       scriptFontId,
       setScriptFontId,
+      typewriterMode,
+      setTypewriterMode,
+      typewriterAnchor,
+      setTypewriterAnchor,
       project,
       projects,
       currentProjectId,
@@ -803,6 +835,8 @@ export function ProjectProvider({ children }) {
       theme,
       fontId,
       scriptFontId,
+      typewriterMode,
+      typewriterAnchor,
       project,
       projects,
       currentProjectId,

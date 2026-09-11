@@ -13,6 +13,18 @@ import SlashMenu from '../../editor/slashMenu/SlashMenu.jsx';
 import { findBlockById } from '../../editor/docUtils.js';
 import { emptyDoc } from '../../editor/docJson.js';
 import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
+import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
+import { activeLinePlugin, activeLineKey } from '../../editor/activeLinePlugin.js';
+import { computeScriptPagination } from '../../export/paginate.js';
+
+// Arriving here from a Screenplay-view line click always centers that line
+// -- a fixed, predictable landing spot the user can then scroll away from
+// freely (when Typewriter Mode is off, nothing scrolls them back). This
+// used to instead match wherever the line was on screen when clicked, but
+// that meant the same click could land anywhere depending on where in the
+// Screenplay view it happened to be, which was harder to predict than just
+// always centering.
+const SCREENPLAY_ARRIVAL_FRACTION = 0.5;
 
 // Not read reactively: the document loaded here becomes the live editing
 // session's own state. Edits flow *out* to ProjectContext
@@ -22,7 +34,15 @@ import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 // different card always means a fresh mount with a different document --
 // there is no "same file" to leak edits between cards.
 export default function Editor() {
-  const { project, view, navigate, updateCardSceneDoc } = useProject();
+  const {
+    project,
+    view,
+    navigate,
+    updateCardSceneDoc,
+    typewriterMode,
+    typewriterAnchor,
+    setTypewriterAnchor,
+  } = useProject();
   const { actId, cardId } = view.payload ?? {};
   const act = project.acts.find((a) => a.id === actId);
   const card = act?.cards.find((c) => c.id === cardId);
@@ -48,6 +68,68 @@ export default function Editor() {
   const initialDocRef = useRef(card?.sceneDoc ?? emptyDoc());
   const initialTargetRef = useRef(view.payload);
   const [slashState, setSlashState] = useState(null);
+  const [pageRange, setPageRange] = useState(null); // { start, end, total } | null
+
+  // Kept in sync with the latest Provider values for use inside the
+  // dispatchTransaction/scroll-listener closures set up once in the mount
+  // effect below (which intentionally never re-runs, or every keystroke
+  // would tear down and recreate the whole ProseMirror view) -- same
+  // pattern as initialDocRef/initialTargetRef.
+  const typewriterModeRef = useRef(typewriterMode);
+  const typewriterAnchorRef = useRef(typewriterAnchor);
+  useEffect(() => {
+    typewriterModeRef.current = typewriterMode;
+  }, [typewriterMode]);
+  useEffect(() => {
+    typewriterAnchorRef.current = typewriterAnchor;
+  }, [typewriterAnchor]);
+  // Set right before this component scrolls the container itself, so the
+  // native `scroll` listener below (which reinterprets a manual scroll as
+  // "the user just repositioned the Typewriter Mode anchor") can tell our
+  // own programmatic corrections apart from the user's own trackpad/wheel
+  // input and ignore them -- otherwise every auto-correction would
+  // immediately feed back in as a (redundant, but not harmless-forever)
+  // anchor update.
+  const programmaticScrollRef = useRef(false);
+
+  // Scrolls so the current selection lands at a given fractional position
+  // down the .editor-scroll viewport (0 = top, 1 = bottom). Used two ways:
+  // centering the line when arriving here from a Screenplay-view line
+  // click (see SCREENPLAY_ARRIVAL_FRACTION below), and -- when Typewriter
+  // Mode is on -- keeping the active line pinned to its sticky anchor.
+  // Expressed as a fraction rather than a raw pixel/doc offset since it has
+  // to hold up across window sizes. Falls back to PM's own scrollIntoView
+  // (nearest-edge, not position-preserving) when there's no fraction to
+  // target at all.
+  function scrollToFraction(editorView, fraction) {
+    const scrollEl = mountRef.current?.closest('.editor-scroll');
+    if (typeof fraction !== 'number' || !scrollEl) {
+      editorView.dispatch(editorView.state.tr.scrollIntoView());
+      return;
+    }
+    const coords = editorView.coordsAtPos(editorView.state.selection.from);
+    const containerRect = scrollEl.getBoundingClientRect();
+    const targetY = containerRect.top + fraction * containerRect.height;
+    const delta = coords.top - targetY;
+    if (Math.abs(delta) < 0.5) return;
+    programmaticScrollRef.current = true;
+    scrollEl.scrollTop += delta;
+  }
+
+  // The reverse of scrollToFraction: reads where the caret currently sits
+  // (as a fraction of the viewport) and adopts that as the new Typewriter
+  // Mode anchor, rather than moving anything on screen. Used whenever the
+  // *user* just chose a position -- a manual scroll, or clicking a specific
+  // line -- so the sticky line moves to meet them there instead of the
+  // reverse.
+  function adoptCurrentFractionAsAnchor(editorView) {
+    const scrollEl = mountRef.current?.closest('.editor-scroll');
+    if (!scrollEl) return;
+    const coords = editorView.coordsAtPos(editorView.state.selection.from);
+    const containerRect = scrollEl.getBoundingClientRect();
+    const fraction = (coords.top - containerRect.top) / containerRect.height;
+    setTypewriterAnchor(Math.min(1, Math.max(0, fraction)));
+  }
 
   useEffect(() => {
     if (!card) return undefined;
@@ -60,6 +142,8 @@ export default function Editor() {
         autoCapsPlugin(),
         placeholderPlugin(),
         fountainPastePlugin(),
+        pageBreakPlugin(),
+        activeLinePlugin(),
       ],
     });
 
@@ -70,10 +154,31 @@ export default function Editor() {
         editorView.updateState(newState);
         setSlashState(slashMenuKey.getState(newState));
         if (tr.docChanged) updateCardSceneDoc(actId, cardId, newState.doc.toJSON());
+        // Runs on every transaction -- typing, Enter (splits a new block),
+        // Backspace/Delete (merges or removes one), arrow-key caret moves,
+        // paste, undo/redo, slash-menu element-type changes, all of it --
+        // rather than special-casing which kinds of edits "count."
+        // scrollToFraction already no-ops once the active line is already
+        // sitting at the anchor, so this is cheap when there's nothing to
+        // correct. A mouse/touch click is the one exception: ProseMirror
+        // tags those transactions with a "pointer" meta (see
+        // prosemirror-view's input.ts) distinct from "key"-origin caret
+        // moves, and a click is the user deliberately choosing where to
+        // look -- forcibly scrolling their choice to the anchor would fight
+        // the click itself. The sticky line should go meet them there
+        // instead, same as it does for a manual scroll.
+        if (typewriterModeRef.current) {
+          if (tr.getMeta('pointer')) {
+            adoptCurrentFractionAsAnchor(editorView);
+          } else {
+            scrollToFraction(editorView, typewriterAnchorRef.current);
+          }
+        }
       },
     });
     viewRef.current = editorView;
     setSlashState(slashMenuKey.getState(editorView.state));
+    editorView.dispatch(editorView.state.tr.setMeta(activeLineKey, typewriterModeRef.current));
 
     // Only a click on a specific Screenplay-view line carries a blockId to
     // scroll to a precise spot within the scene; opening from a beat card
@@ -88,8 +193,33 @@ export default function Editor() {
       if (found) {
         const endPos = found.pos + 1 + found.node.content.size;
         const sel = TextSelection.near(editorView.state.doc.resolve(endPos), -1);
-        editorView.dispatch(editorView.state.tr.setSelection(sel).scrollIntoView());
+        editorView.dispatch(editorView.state.tr.setSelection(sel));
       }
+    }
+    // Measuring/scrolling right here would run against a layout that hasn't
+    // settled yet -- the .editor-scroll container was just mounted this
+    // same tick, so it'd (wrongly) no-op. Typing afterwards "fixed" it only
+    // because the browser's own native caret-follow scrolling kicks in for
+    // real keystrokes, independent of this. Deferring to the next animation
+    // frame gives layout a chance to settle first, so the very first scroll
+    // attempt actually lands. Runs whenever there's anywhere in particular
+    // to land -- arriving at a specific clicked line (always centered), or
+    // Typewriter Mode's sticky anchor, which takes priority: if it's on,
+    // every arrival should land at that same consistent spot instead.
+    if (blockId || typewriterModeRef.current) {
+      requestAnimationFrame(() => {
+        // In dev, React.StrictMode mounts this effect, tears it down, and
+        // mounts it again -- by the time this fires, `editorView` (this
+        // specific mount's closed-over instance) may already be a destroyed
+        // leftover from the throwaway first pass, distinct from whatever
+        // `viewRef.current` now points to. Only proceed if this is still
+        // the live view.
+        if (viewRef.current !== editorView) return;
+        scrollToFraction(
+          editorView,
+          typewriterModeRef.current ? typewriterAnchorRef.current : SCREENPLAY_ARRIVAL_FRACTION
+        );
+      });
     }
     editorView.focus();
 
@@ -97,6 +227,80 @@ export default function Editor() {
       editorView.destroy();
       viewRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Recomputes where this scene's blocks fall in the exported PDF's page
+  // count -- across the *whole* script, not just this scene, since a page
+  // break can land here purely because of how much came before it in
+  // earlier beats. Debounced so a fast typist isn't re-running full-script
+  // pagination (which re-measures every block's text wrapping) on every
+  // keystroke; it only needs to be eventually consistent, not live.
+  const firstPaginationRef = useRef(true);
+  useEffect(() => {
+    const ids = new Set((card?.sceneDoc?.content ?? []).map((n) => n.attrs?.id).filter(Boolean));
+    if (!ids.size) {
+      setPageRange(null);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      const { blocks, totalPages } = computeScriptPagination(project);
+      const mine = blocks.filter((b) => ids.has(b.id));
+      if (!mine.length) return;
+      const pages = mine.map((b) => b.page);
+      setPageRange({ start: Math.min(...pages), end: Math.max(...pages), total: totalPages });
+      const breaks = mine.filter((b) => b.startsNewPage);
+      viewRef.current?.dispatch(viewRef.current.state.tr.setMeta(pageBreakKey, breaks));
+      // Inserting a marker can push content (and the caret) down enough to
+      // scroll it back out of view -- only matters for the very first
+      // pagination pass right after opening via a specific line (see the
+      // scrollIntoView fix above); re-nudge it back into view just this once
+      // rather than fighting the user's scroll position on every later edit.
+      // (Typewriter Mode doesn't need this: the setMeta dispatch just above
+      // already runs through dispatchTransaction, which re-corrects the
+      // scroll on every transaction whenever the mode is on.)
+      if (firstPaginationRef.current && initialTargetRef.current?.blockId && !typewriterModeRef.current) {
+        requestAnimationFrame(() => {
+          if (viewRef.current) scrollToFraction(viewRef.current, SCREENPLAY_ARRIVAL_FRACTION);
+        });
+      }
+      firstPaginationRef.current = false;
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [project, card]);
+
+  // Handles toggling Typewriter Mode on/off *while this card is already
+  // open* (the mount effect above only covers arriving with it already on).
+  // Flips the active-line highlight and, if it just turned on, immediately
+  // snaps the current caret to the anchor rather than waiting for the next
+  // edit or scroll to trigger a correction.
+  useEffect(() => {
+    const editorView = viewRef.current;
+    if (!editorView) return;
+    editorView.dispatch(editorView.state.tr.setMeta(activeLineKey, typewriterMode));
+    if (typewriterMode) scrollToFraction(editorView, typewriterAnchorRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typewriterMode]);
+
+  // While Typewriter Mode is on, a manual scroll (trackpad/wheel/scrollbar
+  // -- anything that isn't this component's own corrective scrollTop writes,
+  // which set programmaticScrollRef first so they're ignored here) is read
+  // as "the user just dragged the sticky line to a new spot": whatever
+  // fraction down the viewport the active line ends up at becomes the new
+  // anchor, so it "sticks where it lands" from then on.
+  useEffect(() => {
+    const scrollEl = mountRef.current?.closest('.editor-scroll');
+    if (!scrollEl) return undefined;
+    function handleScroll() {
+      if (programmaticScrollRef.current) {
+        programmaticScrollRef.current = false;
+        return;
+      }
+      if (!typewriterModeRef.current || !viewRef.current) return;
+      adoptCurrentFractionAsAnchor(viewRef.current);
+    }
+    scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollEl.removeEventListener('scroll', handleScroll);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -113,7 +317,7 @@ export default function Editor() {
 
   return (
     <div className="editor-shell">
-      <div className="editor-scroll">
+      <div className={`editor-scroll${typewriterMode ? ' typewriter-mode' : ''}`}>
         <div className="screenplay-head">
           <div>
             <div className="board-title">{card.title}</div>
@@ -122,6 +326,12 @@ export default function Editor() {
             </div>
           </div>
           <div className="editor-beat-nav">
+            {pageRange && (
+              <span className="page-range-badge" title="Script page(s) this beat spans, and the script's total page count">
+                {pageRange.start === pageRange.end ? `Page ${pageRange.start}` : `Pages ${pageRange.start}–${pageRange.end}`}
+                {' '}of {pageRange.total}
+              </span>
+            )}
             <button
               className="editor-beat-nav-btn"
               disabled={!prevCard}
