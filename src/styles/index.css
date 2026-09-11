@@ -898,3 +898,11 @@ button {
 .touch-platform .collapse-btn {
   min-width: 38px; min-height: 38px;
 }
+/* .beat-card-actions floats at top: 8px, so at 38px tall it now reaches
+   down to y=46 from the card's top edge -- past where .beat-card-num's
+   text (starting at the card's own 12px padding) sits, so the action icons
+   were overlapping/intercepting clicks on the scene tag and the first line
+   of the title beneath it (confirmed via an actual pointer-event
+   interception, not just a visual guess). Reserves enough top padding for
+   content to clear the icon row instead of sitting under it. */
+.touch-platform .beat-card { padding-top: 50px; }

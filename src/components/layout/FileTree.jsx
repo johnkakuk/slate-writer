@@ -46,11 +46,11 @@ function DocFolder({
         onTouchEnd={longPress.onTouchEnd}
         onTouchCancel={longPress.onTouchCancel}
       >
-        <TouchDragHandle dragRef={dragHandleRef} />
         <button className="folder" onClick={() => setOpen((o) => !o)}>
           <span className="folder-icon">{open ? '▾' : '▸'}</span>
           {docType.pluralLabel}
         </button>
+        <TouchDragHandle dragRef={dragHandleRef} />
         <button className="folder-add" onClick={onAdd} title={`Add ${docType.singularLabel}`}>
           +
         </button>
