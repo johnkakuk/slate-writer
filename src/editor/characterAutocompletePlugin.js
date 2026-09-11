@@ -38,7 +38,7 @@ function suggestionAt(state, getRecentNames) {
   if (!empty) return null;
   const node = $from.parent;
   if (node.type.name !== 'character') return null;
-  if ($from.parentOffset !== node.content.size) return null; // only at the trailing edge
+  if ($from.parentOffset !== node.content.size) return null;
   const suggestion = computeSuggestion(node, getRecentNames());
   return suggestion ? { pos: $from.pos, text: suggestion } : null;
 }

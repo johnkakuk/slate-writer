@@ -9,7 +9,7 @@ const THEME_OPTIONS = [
 
 const HIGHLIGHT_STYLE_OPTIONS = [
   { value: 'paragraph', label: 'Paragraph', hint: 'Full-width highlight' },
-  { value: 'sentence', label: 'Sentence', hint: 'Just the current sentence' },
+  { value: 'line', label: 'Line', hint: 'Just the current line' },
   { value: 'underline', label: 'Underline', hint: 'No background fill' },
   { value: 'none', label: 'None', hint: 'Sticky scroll only' },
 ];

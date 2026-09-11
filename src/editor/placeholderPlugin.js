@@ -25,10 +25,14 @@ export function placeholderPlugin() {
         const meta = ELEMENT_TYPE_BY_NAME[node.type.name];
         if (!meta) return null;
 
+        // Tab on an empty Character block cycles recently-used names now
+        // (see keymap.js's cycleCharacterName), not element type -- "Tab
+        // or" is no longer an accurate hint there specifically.
+        const hint = node.type.name === 'character' ? `${meta.label} — "/" for options` : `${meta.label} — Tab or "/" for options`;
         const nodePos = $from.before($from.depth);
         const deco = Decoration.node(nodePos, nodePos + node.nodeSize, {
           class: 'is-empty',
-          'data-placeholder': `${meta.label} — Tab or "/" for options`,
+          'data-placeholder': hint,
         });
         return DecorationSet.create(state.doc, [deco]);
       },

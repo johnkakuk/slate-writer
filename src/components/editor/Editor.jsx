@@ -92,7 +92,11 @@ export default function Editor() {
   // after reopening the Editor.
   const recentCharacterNamesRef = useRef(getRecentCharacterNames(project));
   useEffect(() => {
-    recentCharacterNamesRef.current = getRecentCharacterNames(project);
+    // Exclude whatever block the caret is in right now -- if it's a
+    // Character block, its text is still being typed (see
+    // characterNames.js) and shouldn't count as a used name yet.
+    const caretBlockId = viewRef.current?.state.selection.$from.parent.attrs?.id ?? null;
+    recentCharacterNamesRef.current = getRecentCharacterNames(project, 5, caretBlockId);
   }, [project]);
   useEffect(() => {
     typewriterModeRef.current = typewriterMode;

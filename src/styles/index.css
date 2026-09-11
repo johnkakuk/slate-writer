@@ -550,10 +550,10 @@ button {
 
 /* Typewriter Mode's other two highlight styles (Settings > Editor) --
    .active-line above is "paragraph". Both are plain inline/background
-   styling with no bleed trick: unlike a whole paragraph, a single sentence
+   styling with no bleed trick: unlike a whole paragraph, a single line
    or an underline reads as *of* the text, not as an ambient full-width
    band, so there's no page-edge-to-page-edge effect to reproduce here. */
-.active-sentence { background: var(--accent-hover-bg); border-radius: 2px; }
+.active-line-text { background: var(--accent-hover-bg); border-radius: 2px; }
 .active-line-underline {
   text-decoration: underline;
   text-decoration-color: var(--accent);
@@ -939,26 +939,25 @@ button {
 
 /* Larger tap targets on touch (Apple HIG recommends ~44pt minimum) -- the
    desktop sizing (e.g. 22px icon buttons meant for a precise mouse cursor)
-   is too small to reliably hit with a fingertip. Bumps the tappable box via
-   size, and scales the icon glyph inside it up to match -- leaving the
-   glyph at its desktop size (~12px) inside a much bigger 38px box left it
-   looking lost/sparse, noticeably more "empty padding" around a tiny icon
-   rather than a bigger tappable icon, which read as the button spacing
-   itself being off even though that part (2px gaps) was already correct. */
-.touch-platform .beat-card-icon-btn { width: 38px; height: 38px; }
-.touch-platform .beat-card-icon-btn svg { width: 20px; height: 20px; }
-.touch-platform .touch-drag-handle { width: 38px; height: 38px; }
-.touch-platform .touch-drag-handle svg { width: 22px; height: 22px; }
+   is too small to reliably hit with a fingertip. Beat-card icons/handle are
+   deliberately NOT enlarged this way (reverted -- see below); this still
+   applies to the sidebar's own small buttons. */
 .touch-platform .folder-add,
 .touch-platform .files-h-add,
 .touch-platform .collapse-btn {
   min-width: 38px; min-height: 38px;
 }
-/* .beat-card-actions floats at top: 8px, so at 38px tall it now reaches
-   down to y=46 from the card's top edge -- past where .beat-card-num's
-   text (starting at the card's own 12px padding) sits, so the action icons
-   were overlapping/intercepting clicks on the scene tag and the first line
-   of the title beneath it (confirmed via an actual pointer-event
-   interception, not just a visual guess). Reserves enough top padding for
-   content to clear the icon row instead of sitting under it. */
-.touch-platform .beat-card { padding-top: 50px; }
+/* Beat-card icons/handle: back to desktop sizing (22px / 28px respectively)
+   -- the 38px enlargement above looked comically oversized on the card
+   itself, so this reverts it there specifically rather than trying to
+   split the difference. Nudged a couple px closer to the corner (6px
+   inset instead of 8px) at the same time, since a smaller icon at the old
+   8px inset read as floating with too much surrounding space rather than
+   sitting snugly in the corner the way desktop's icons do. */
+.touch-platform .beat-card-actions { top: 6px; right: 6px; }
+.touch-platform .touch-drag-handle-top-left { top: 6px; left: 6px; }
+/* .touch-drag-handle-top-left is 28px tall (the handle's own base size,
+   unlike the reverted 22px icon buttons) -- still needs *some* top
+   clearance so it doesn't crowd the scene tag/title beneath it, just far
+   less than the 50px the 38px version needed. */
+.touch-platform .beat-card { padding-top: 40px; }

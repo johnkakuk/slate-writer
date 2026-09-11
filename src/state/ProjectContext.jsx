@@ -187,7 +187,7 @@ export function ProjectProvider({ children }) {
     FONT_BY_ID[persisted?.scriptFontId] ? persisted.scriptFontId : DEFAULT_FONT_ID
   );
   const [typewriterMode, setTypewriterMode] = useState(() => persisted?.typewriterMode === true);
-  const VALID_HIGHLIGHT_STYLES = ['paragraph', 'sentence', 'underline', 'none'];
+  const VALID_HIGHLIGHT_STYLES = ['paragraph', 'line', 'underline', 'none'];
   const [typewriterHighlightStyle, setTypewriterHighlightStyle] = useState(() =>
     VALID_HIGHLIGHT_STYLES.includes(persisted?.typewriterHighlightStyle) ? persisted.typewriterHighlightStyle : 'paragraph'
   );
