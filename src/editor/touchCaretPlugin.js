@@ -41,7 +41,16 @@ export function touchCaretPlugin() {
             const $pos = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size));
             const sel = TextSelection.near($pos);
             if (sel.eq(view.state.selection)) return;
-            view.dispatch(view.state.tr.setSelection(sel));
+            // Tagged "pointer" -- the same meta PM's own click handling sets
+            // (see prosemirror-view's input.ts) -- so Editor.jsx's Typewriter
+            // Mode dispatchTransaction treats this correction exactly like a
+            // real click: adopt it as the new sticky-line anchor rather than
+            // forcibly scrolling the corrected position back to the OLD
+            // anchor. Without this tag, the correction read as a plain caret
+            // move, which fought the tap -- the view would jump to satisfy
+            // the stale anchor instead of meeting the user where they tapped,
+            // landing the active-line highlight somewhere else entirely.
+            view.dispatch(view.state.tr.setSelection(sel).setMeta('pointer', true));
           });
           return false; // never preventDefault -- native focus/scroll still proceeds normally
         },
