@@ -1,16 +1,21 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createSampleProject, createEmptyProject, defaultTitlePage, defaultDocTypes } from './sampleData.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
 import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
+import { loadNativeState, saveNativeState } from './nativeSqliteStorage.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
 // Under Electron, `window.slateStorage` (see electron/preload.cjs) backs
 // this with a real SQLite file instead of localStorage -- see
-// electron/main.cjs for why. The web build (and the Capacitor iOS build)
-// has no such bridge, so it keeps using localStorage directly.
+// electron/main.cjs for why. The Capacitor iOS build gets the same
+// durability via a different mechanism (nativeSqliteStorage.js), but that
+// plugin bridge is async-only, so it can't be read synchronously here the
+// way the other two platforms can -- see ProjectProvider's native bootstrap
+// effect below instead. This function is only ever called on web/Electron.
 function loadPersisted() {
   try {
     if (window.slateStorage) {
@@ -34,8 +39,15 @@ function loadPersisted() {
   }
 }
 
+// Fire-and-forget on every platform -- none of the three storage backends
+// need the caller to wait (SQLite writes here are just as async as
+// Electron's IPC `send`/localStorage's synchronous write is fast enough not
+// to matter), and blocking the UI thread on every autosave for a slow disk
+// write would be worse than the small risk of a write racing app teardown.
 function savePersisted(json) {
-  if (window.slateStorage) {
+  if (Capacitor.isNativePlatform()) {
+    saveNativeState(json).catch((err) => console.error('Failed to save to native SQLite storage', err));
+  } else if (window.slateStorage) {
     window.slateStorage.save(json);
   } else {
     localStorage.setItem(STORAGE_KEY, json);
@@ -153,8 +165,17 @@ export function ProjectProvider({ children }) {
   // Read persisted state synchronously into each piece of state's lazy
   // initializer (rather than restoring it later in a useEffect) so the very
   // first render already reflects it — see the autosave effect below for
-  // why doing this later caused a revert-on-reload bug.
-  const [persisted] = useState(() => loadPersisted());
+  // why doing this later caused a revert-on-reload bug. That's only
+  // possible on web/Electron, where the storage read itself is synchronous;
+  // Capacitor's native plugin bridge has no synchronous equivalent, so on
+  // iOS `persisted` starts null (the same shape as "nothing saved yet," on
+  // any platform) and gets hydrated for real by the bootstrap effect below,
+  // which also gates `ready` to stop the autosave effect from firing (and
+  // overwriting real data with these placeholder defaults) before that
+  // hydration lands.
+  const isNative = Capacitor.isNativePlatform();
+  const [persisted] = useState(() => (isNative ? null : loadPersisted()));
+  const [ready, setReady] = useState(() => !isNative);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     typeof persisted?.sidebarCollapsed === 'boolean' ? persisted.sidebarCollapsed : false
@@ -200,6 +221,50 @@ export function ProjectProvider({ children }) {
 
   const project = projects[currentProjectId];
 
+  // Native-only: the synchronous initializers above all ran against
+  // `persisted = null`, i.e. exactly what a fresh install renders on any
+  // platform (sample project, defaults for everything else) -- correct
+  // as a placeholder, but wrong if this device actually has real saved
+  // data, which the synchronous read couldn't check. This loads it for
+  // real and overwrites those placeholders in one shot once it lands, then
+  // flips `ready`, which un-gates the autosave effect below. A failed read
+  // (plugin error, corrupt row) degrades to treating this as a fresh
+  // install rather than getting stuck on the loading screen forever.
+  useEffect(() => {
+    if (!isNative) return undefined;
+    let cancelled = false;
+    (async () => {
+      let data = null;
+      try {
+        const raw = await loadNativeState();
+        data = raw ? JSON.parse(raw) : null;
+      } catch (err) {
+        console.error('Failed to load native SQLite storage', err);
+      }
+      if (cancelled) return;
+      if (data) {
+        setSidebarCollapsed(typeof data.sidebarCollapsed === 'boolean' ? data.sidebarCollapsed : false);
+        setTheme(data.theme === 'light' ? 'light' : 'dark');
+        setFontId(FONT_BY_ID[data.fontId] ? data.fontId : DEFAULT_FONT_ID);
+        setScriptFontId(FONT_BY_ID[data.scriptFontId] ? data.scriptFontId : DEFAULT_FONT_ID);
+        setTypewriterMode(data.typewriterMode === true);
+        const builtProjects = buildInitialProjects(data);
+        setProjects(builtProjects);
+        setCurrentProjectId(
+          data.currentProjectId && builtProjects[data.currentProjectId]
+            ? data.currentProjectId
+            : Object.keys(builtProjects)[0]
+        );
+        setLastSavedAt(data.lastSavedAt ?? null);
+      }
+      setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Reflect the theme on the document root so the CSS `[data-theme]` tokens
   // apply everywhere, not just inside the React tree.
   useEffect(() => {
@@ -222,8 +287,13 @@ export function ProjectProvider({ children }) {
   }, [scriptFontId]);
 
   // Persist whenever any project, the active project, sidebar, theme, or
-  // font state changes (autosave).
+  // font state changes (autosave). Gated on `ready` so that on native, the
+  // placeholder defaults the synchronous initializers rendered before the
+  // real async load landed can never get written out and clobber the
+  // actual saved data -- the exact bug the comment on `persisted` above
+  // warns about, which this dodges by simply not persisting anything yet.
   useEffect(() => {
+    if (!ready) return;
     const savedAt = Date.now();
     setLastSavedAt(savedAt);
     try {
@@ -243,7 +313,7 @@ export function ProjectProvider({ children }) {
       // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode]);
+  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode, ready]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -913,7 +983,13 @@ export function ProjectProvider({ children }) {
     ]
   );
 
-  return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
+  // Only ever briefly true on native (SQLite reads here are fast) -- avoids
+  // a flash of the placeholder sample project before the real data swaps
+  // in, which `ready` alone wouldn't prevent since gating just the autosave
+  // effect still lets the placeholder render.
+  return (
+    <ProjectContext.Provider value={value}>{ready ? children : <div className="app-loading" />}</ProjectContext.Provider>
+  );
 }
 
 export function useProject() {

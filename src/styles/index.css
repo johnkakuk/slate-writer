@@ -109,6 +109,12 @@ button {
   display: flex;
   height: 100vh;
 }
+/* Native (iOS) only, and only for the brief window before the async SQLite
+   read resolves -- see ProjectContext.jsx's bootstrap effect. */
+.app-loading {
+  height: 100vh;
+  background: var(--surface);
+}
 
 /* ---------------- Sidebar ---------------- */
 .sidebar {
