@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { createSampleProject, createEmptyProject, SEED_PROJECT_NAMES, defaultTitlePage, defaultDocTypes } from './sampleData.js';
+import { createSampleProject, createEmptyProject, defaultTitlePage, defaultDocTypes } from './sampleData.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
@@ -144,12 +144,7 @@ function buildInitialProjects(persisted) {
     };
   }
   const sample = createSampleProject();
-  const map = { [sample.id]: sample };
-  for (const name of SEED_PROJECT_NAMES.slice(1)) {
-    const p = createEmptyProject(name);
-    map[p.id] = p;
-  }
-  return map;
+  return { [sample.id]: sample };
 }
 
 const ProjectContext = createContext(null);
