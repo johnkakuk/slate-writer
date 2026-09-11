@@ -52,6 +52,28 @@ export default function Editor() {
   const [slashState, setSlashState] = useState(null);
   const [pageRange, setPageRange] = useState(null); // { start, end, total } | null
 
+  // Scrolls so the current selection lands at the same fractional position
+  // down the .editor-scroll viewport that the clicked Screenplay line was
+  // at when it was clicked (see ScreenplayView.jsx's handleLineClick) --
+  // expressed as a fraction of viewport height rather than a raw pixel/doc
+  // offset, since the two views show different documents (the whole script
+  // vs. just this scene) that can't be matched position-for-position any
+  // other way. Falls back to PM's own scrollIntoView (nearest-edge, not
+  // position-preserving) when there's no fraction to match -- opening from
+  // a beat card, the pencil icon, etc., where there's no "previous position"
+  // to preserve in the first place.
+  function scrollToMatchFraction(editorView, scrollFraction) {
+    const scrollEl = mountRef.current?.closest('.editor-scroll');
+    if (typeof scrollFraction !== 'number' || !scrollEl) {
+      editorView.dispatch(editorView.state.tr.scrollIntoView());
+      return;
+    }
+    const coords = editorView.coordsAtPos(editorView.state.selection.from);
+    const containerRect = scrollEl.getBoundingClientRect();
+    const targetY = containerRect.top + scrollFraction * containerRect.height;
+    scrollEl.scrollTop += coords.top - targetY;
+  }
+
   useEffect(() => {
     if (!card) return undefined;
     const state = EditorState.create({
@@ -93,15 +115,22 @@ export default function Editor() {
         const endPos = found.pos + 1 + found.node.content.size;
         const sel = TextSelection.near(editorView.state.doc.resolve(endPos), -1);
         editorView.dispatch(editorView.state.tr.setSelection(sel));
-        // scrollIntoView() right here measures against a layout that hasn't
-        // settled yet -- the .editor-scroll container was just mounted this
-        // same tick, so it (wrongly) no-ops instead of scrolling. Typing
+        // Measuring/scrolling right here would run against a layout that
+        // hasn't settled yet -- the .editor-scroll container was just
+        // mounted this same tick, so it'd (wrongly) no-op. Typing
         // afterwards "fixed" it only because the browser's own native
         // caret-follow scrolling kicks in for real keystrokes, independent of
         // this. Deferring to the next animation frame gives layout a chance
         // to settle first, so the very first scroll attempt actually lands.
         requestAnimationFrame(() => {
-          editorView.dispatch(editorView.state.tr.scrollIntoView());
+          // In dev, React.StrictMode mounts this effect, tears it down, and
+          // mounts it again -- by the time this fires, `editorView` (this
+          // specific mount's closed-over instance) may already be a
+          // destroyed leftover from the throwaway first pass, distinct from
+          // whatever `viewRef.current` now points to. Only proceed if this
+          // is still the live view.
+          if (viewRef.current !== editorView) return;
+          scrollToMatchFraction(editorView, initialTargetRef.current?.scrollFraction);
         });
       }
     }
@@ -142,7 +171,7 @@ export default function Editor() {
       // rather than fighting the user's scroll position on every later edit.
       if (firstPaginationRef.current && initialTargetRef.current?.blockId) {
         requestAnimationFrame(() => {
-          viewRef.current?.dispatch(viewRef.current.state.tr.scrollIntoView());
+          if (viewRef.current) scrollToMatchFraction(viewRef.current, initialTargetRef.current?.scrollFraction);
         });
       }
       firstPaginationRef.current = false;
@@ -173,7 +202,7 @@ export default function Editor() {
           </div>
           <div className="editor-beat-nav">
             {pageRange && (
-              <span className="editor-page-range" title="Script page(s) this beat spans, and the script's total page count">
+              <span className="page-range-badge" title="Script page(s) this beat spans, and the script's total page count">
                 {pageRange.start === pageRange.end ? `Page ${pageRange.start}` : `Pages ${pageRange.start}–${pageRange.end}`}
                 {' '}of {pageRange.total}
               </span>
