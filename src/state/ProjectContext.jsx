@@ -6,6 +6,7 @@ import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
 import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
 import { loadNativeState, saveNativeState } from './nativeSqliteStorage.js';
+import { isTouchPlatform } from '../utils/platform.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
@@ -327,8 +328,17 @@ export function ProjectProvider({ children }) {
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
 
+  // On the iOS build, the sidebar is a slide-over drawer rather than
+  // permanent chrome (see index.css's .touch-platform responsive rules) --
+  // picking something from it should close it the way a mobile nav drawer
+  // normally does, not leave it covering the screen over whatever just
+  // opened. No-op on desktop/web, where the sidebar is just always-visible
+  // layout, not something to dismiss. isTouchPlatform()'s result never
+  // changes during a session, so this is safe inside a []-dep useCallback
+  // despite not being listed as a dependency.
   const navigate = useCallback((name, payload = null) => {
     setView({ name, payload });
+    if (isTouchPlatform()) setSidebarCollapsed(true);
   }, []);
 
   // Every mutation to the *active* project's data goes through this one
@@ -343,6 +353,7 @@ export function ProjectProvider({ children }) {
   const switchProject = useCallback((projectId) => {
     setCurrentProjectId(projectId);
     setView({ name: 'outline', payload: null });
+    if (isTouchPlatform()) setSidebarCollapsed(true);
   }, []);
 
   const createProject = useCallback((name) => {

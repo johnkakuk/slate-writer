@@ -886,3 +886,15 @@ button {
   -webkit-user-select: none;
   user-select: none;
 }
+
+/* Larger tap targets on touch (Apple HIG recommends ~44pt minimum) -- the
+   desktop sizing (e.g. 22px icon buttons meant for a precise mouse cursor)
+   is too small to reliably hit with a fingertip. Bumps the *tappable* box
+   via padding/min-size without changing the icons' own visual weight. */
+.touch-platform .beat-card-icon-btn { width: 38px; height: 38px; }
+.touch-platform .touch-drag-handle { width: 38px; height: 38px; }
+.touch-platform .folder-add,
+.touch-platform .files-h-add,
+.touch-platform .collapse-btn {
+  min-width: 38px; min-height: 38px;
+}
