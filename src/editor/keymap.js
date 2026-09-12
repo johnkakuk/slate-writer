@@ -42,13 +42,14 @@ function cycleCharacterName(getRecentNames) {
     const currentText = node.textContent.trim().toUpperCase();
     if (currentText && !names.includes(currentText)) return false;
     const currentIdx = names.indexOf(currentText);
-    // Cycles backward through the list on repeat presses (reversed from
-    // the original forward order per explicit request) -- an empty/
-    // not-yet-recognized block (currentIdx -1) still starts at the most
-    // recent name first, same as before; only the *subsequent* step
-    // direction flipped, wrapping from index 0 to the end instead of from
-    // the end back to 0.
-    const nextIdx = currentIdx === -1 ? 0 : (currentIdx - 1 + names.length) % names.length;
+    // Starts at the *second* most recent name, not the most recent one --
+    // that person just finished talking, so re-suggesting them first for a
+    // fresh line isn't useful (the (CONT'D) convention covers the "same
+    // character resumes" case on its own). Cycles chronologically forward
+    // from there (3rd most recent, 4th, ...), wrapping around to the most
+    // recent name last, right before the cycle repeats from 2nd-most-recent
+    // again.
+    const nextIdx = currentIdx === -1 ? (names.length > 1 ? 1 : 0) : (currentIdx + 1) % names.length;
     const nextName = names[nextIdx];
     if (dispatch) {
       const from = $from.before($from.depth) + 1;
