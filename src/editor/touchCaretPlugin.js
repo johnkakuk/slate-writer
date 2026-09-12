@@ -12,6 +12,16 @@ import { TextSelection } from 'prosemirror-state';
 // ends up wrong too -- this isn't a PM sync bug to fix, it's WebKit's own
 // hit testing to work around.
 //
+// Resolution goes through view.posAtCoords rather than a raw
+// document.caretRangeFromPoint call -- both end up calling the same
+// underlying browser primitive internally, but posAtCoords layers a set of
+// its own browser-specific correction kludges on top (accumulated across
+// PM's history for exactly this class of hit-testing unreliability), so it
+// tends to land right more often even before the geometry override below
+// ever kicks in. Reported as still not 100% reliable even so -- this
+// narrows the gap further but a from-scratch character-level hit-test
+// would be the only way to fully eliminate it, which isn't attempted here.
+//
 // Deferred to the next animation frame so this runs *after* native
 // touch-driven selection-setting has already settled, rather than racing
 // it -- a same-tick correction could just get immediately overwritten by
@@ -21,23 +31,14 @@ export function touchCaretPlugin() {
     props: {
       handleDOMEvents: {
         touchend(view, event) {
-          if (event.changedTouches.length !== 1 || typeof document.caretRangeFromPoint !== 'function') {
-            return false;
-          }
+          if (event.changedTouches.length !== 1) return false;
           const touch = event.changedTouches[0];
           requestAnimationFrame(() => {
             if (view.isDestroyed) return;
-            const range = document.caretRangeFromPoint(touch.clientX, touch.clientY);
-            if (!range || !view.dom.contains(range.startContainer)) return;
-            let pos;
-            try {
-              pos = view.posAtDOM(range.startContainer, range.startOffset);
-            } catch {
-              return;
-            }
-            if (typeof pos !== 'number' || pos < 0) return;
+            const result = view.posAtCoords({ left: touch.clientX, top: touch.clientY });
+            if (!result) return;
             const docSize = view.state.doc.content.size;
-            let $pos = view.state.doc.resolve(Math.min(pos, docSize));
+            let $pos = view.state.doc.resolve(Math.min(result.pos, docSize));
 
             // Geometry-first override, independent of whatever the initial
             // (potentially ambiguous) resolution above landed on: figure
@@ -57,20 +58,29 @@ export function touchCaretPlugin() {
             // to the nearest valid position on that line, which for an X
             // beyond the rendered text *is* the text's own edge) --
             // independent of the block's own (possibly much wider) box.
-            const blockStart = $pos.before($pos.depth);
-            const blockNode = view.state.doc.nodeAt(blockStart);
-            const blockDOM = blockNode && view.nodeDOM(blockStart);
-            if (blockDOM instanceof HTMLElement) {
-              const rect = blockDOM.getBoundingClientRect();
-              const lineStart = view.posAtCoords({ left: rect.left + 1, top: touch.clientY });
-              const lineEnd = view.posAtCoords({ left: rect.right - 1, top: touch.clientY });
-              if (lineStart && lineEnd) {
-                const startCoords = view.coordsAtPos(lineStart.pos);
-                const endCoords = view.coordsAtPos(lineEnd.pos);
-                if (touch.clientX < startCoords.left - 2) {
-                  $pos = view.state.doc.resolve(Math.min(lineStart.pos, docSize));
-                } else if (touch.clientX > endCoords.right + 2) {
-                  $pos = view.state.doc.resolve(Math.min(lineEnd.pos, docSize));
+            // A tap that lands between blocks (rather than inside one --
+            // e.g. in inter-block padding, or during a fast drag) can
+            // resolve to a position at the very top level, where there's no
+            // enclosing block to measure line bounds for at all ($pos.before(0)
+            // throws) -- skip the bounds refinement in that case and fall
+            // through to TextSelection.near($pos) below, which already
+            // knows how to find the nearest real cursor position from here.
+            if ($pos.depth > 0) {
+              const blockStart = $pos.before($pos.depth);
+              const blockNode = view.state.doc.nodeAt(blockStart);
+              const blockDOM = blockNode && view.nodeDOM(blockStart);
+              if (blockDOM instanceof HTMLElement) {
+                const rect = blockDOM.getBoundingClientRect();
+                const lineStart = view.posAtCoords({ left: rect.left + 1, top: touch.clientY });
+                const lineEnd = view.posAtCoords({ left: rect.right - 1, top: touch.clientY });
+                if (lineStart && lineEnd) {
+                  const startCoords = view.coordsAtPos(lineStart.pos);
+                  const endCoords = view.coordsAtPos(lineEnd.pos);
+                  if (touch.clientX < startCoords.left - 2) {
+                    $pos = view.state.doc.resolve(Math.min(lineStart.pos, docSize));
+                  } else if (touch.clientX > endCoords.right + 2) {
+                    $pos = view.state.doc.resolve(Math.min(lineEnd.pos, docSize));
+                  }
                 }
               }
             }

@@ -85,6 +85,28 @@ function smartEnter(state, dispatch) {
     return true;
   }
 
+  // The continuation-type split below is only meaningful when there's real
+  // text staying *behind* in the original block -- it means "I finished
+  // this line, start a new one of the usual next type." With the caret at
+  // the very start of a non-empty block, there's nothing behind it: every
+  // character is "after the caret," so splitting there doesn't produce a
+  // finished-old-line/started-new-line pair at all, just the same content
+  // relabeled into the continuation type and shoved down a line. That's
+  // not a real editing action -- most often it's the touch caret landing
+  // at position 0 when the tap actually meant to land mid-sentence (see
+  // touchCaretPlugin.js), and even when it isn't, "change the type of
+  // everything I already wrote" isn't what Enter should mean. Insert a
+  // genuinely blank line of the *same* type above instead, leaving the
+  // existing text and its type completely untouched.
+  if ($from.parentOffset === 0) {
+    if (dispatch) {
+      const pos = $from.before($from.depth);
+      const blank = node.type.create({ ...node.attrs, id: generateId('block') });
+      dispatch(state.tr.insert(pos, blank).scrollIntoView());
+    }
+    return true;
+  }
+
   const nextTypeName = ENTER_CONTINUATION[node.type.name] || node.type.name;
   const nextType = state.schema.nodes[nextTypeName];
   if (!nextType) return false;
