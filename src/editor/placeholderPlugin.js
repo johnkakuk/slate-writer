@@ -7,7 +7,7 @@ import { ELEMENT_TYPE_BY_NAME } from './elementTypes.js';
 // cursor is actually in, so it doesn't clutter every empty line.
 //
 // Rendered as a `Decoration.node` (a class + data attribute on the empty
-// node's own element, picked up by CSS `::before`) rather than a widget with
+// node's own element, picked up by CSS pseudo-elements) rather than a widget with
 // real DOM text — a widget sitting exactly at the cursor position is a real
 // node the browser can plant its native caret against, which desyncs it
 // from ProseMirror's model position: the caret visually stalls and typed

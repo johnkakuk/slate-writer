@@ -1,3 +1,5 @@
+import EditorSearch from './EditorSearch.jsx';
+import { searchPlugin, searchKey, emptySearch } from '../../editor/searchPlugin.js';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
@@ -69,6 +71,27 @@ export default function Editor({ fullscreen = false, onExitFullscreen }) {
     navigate('editor', { actId: target.actId, cardId: target.cardId, label: target.title, source: view.payload?.source });
   }
 
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchState, setSearchState] = useState(emptySearch);
+  const closeSearch = () => {
+    setSearchOpen(false);
+    const editor = viewRef.current;
+    if (editor) {
+      editor.dispatch(editor.state.tr.setMeta(searchKey, { query: '' }));
+      editor.focus();
+    }
+  };
+  useEffect(() => {
+    const onKeyDown = event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f' && !event.isComposing) {
+        event.preventDefault();
+        setSearchOpen(true);
+        mountRef.current?.closest('.editor-shell')?.querySelector('.editor-search input')?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
   const mountRef = useRef(null);
   const viewRef = useRef(null);
   const exitFullscreenRef = useRef(null);
@@ -258,6 +281,7 @@ export default function Editor({ fullscreen = false, onExitFullscreen }) {
           return true;
         }),
         history(),
+        searchPlugin(),
         autoCapsPlugin(),
         placeholderPlugin(),
         fountainPastePlugin(),
@@ -274,6 +298,7 @@ export default function Editor({ fullscreen = false, onExitFullscreen }) {
         const newState = editorView.state.apply(tr);
         editorView.updateState(newState);
         setSlashState(slashMenuKey.getState(newState));
+        setSearchState(searchKey.getState(newState));
         if (tr.docChanged) updateCardSceneDoc(actId, cardId, newState.doc.toJSON());
         // Runs on every transaction -- typing, Enter (splits a new block),
         // Backspace/Delete (merges or removes one), arrow-key caret moves,
@@ -526,6 +551,7 @@ export default function Editor({ fullscreen = false, onExitFullscreen }) {
 
   return (
     <div className="editor-shell">
+      {searchOpen && <EditorSearch getView={() => viewRef.current} search={searchState} onClose={closeSearch} />}
       <div className={`editor-scroll${typewriterMode ? ' typewriter-mode' : ''}`}>
         <div className="screenplay-head">
           <div>

@@ -69,7 +69,7 @@ test('Shift-Tab outside a Character block still cycles the element type backward
   const h = setup([['dialogue', 'Hello.']]);
   h.key('Tab', true);
   assert.equal(h.block.type.name, 'character');
-  assert.equal(h.block.textContent, 'Hello.');
+  assert.equal(h.block.textContent, 'HELLO.');
 });
 
 test('Enter then an opening parenthesis after dialogue creates a trailing parenthetical', () => {

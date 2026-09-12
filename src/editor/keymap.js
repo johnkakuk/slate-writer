@@ -121,6 +121,13 @@ function smartEnter(state, dispatch) {
   return true;
 }
 
+export function blankCharacterToAction(state, dispatch) {
+  const { $from, empty } = state.selection;
+  if (!empty || $from.parent.type.name !== 'character' || $from.parent.content.size) return false;
+  if (dispatch) dispatch(state.tr.setNodeMarkup($from.before(), state.schema.nodes.action, $from.parent.attrs).scrollIntoView());
+  return true;
+}
+
 // `getRecentNames` is a function, not a plain array, so it can read a live
 // ref for the current recently-used-names list (see Editor.jsx) --
 // editorKeymap() itself runs once at mount and never re-runs, same
@@ -130,13 +137,14 @@ export function editorKeymap(getRecentNames, exitFullscreen) {
   const reverseNameCycle = cycleCharacterName(getRecentNames, -1);
   const typeCycle = cycleType(1);
   const reverseTypeCycle = cycleType(-1);
-  return keymap({
+  const plugin = keymap({
     ...baseKeymap,
     // The slash-menu plugin runs first; otherwise fullscreen takes priority
     // over ProseMirror's default Escape command (select the parent node).
     Escape: (state, dispatch, view) => exitFullscreen?.()
       || baseKeymap.Escape?.(state, dispatch, view) || false,
     Enter: smartEnter,
+    Backspace: (state, dispatch, view) => blankCharacterToAction(state, dispatch) || baseKeymap.Backspace(state, dispatch, view),
     // Cycle through recently-used names on an empty/cycling Character
     // block first, then fall back to the original type-cycle.
     Tab: (state, dispatch) => nameCycle(state, dispatch) || typeCycle(state, dispatch),
@@ -145,4 +153,14 @@ export function editorKeymap(getRecentNames, exitFullscreen) {
     'Shift-Mod-z': redo,
     'Mod-y': redo,
   });
+  // Software keyboards may deliver deletion through beforeinput without keydown.
+  plugin.props.handleDOMEvents = {
+    beforeinput(view, event) {
+      if (event.isComposing || event.inputType !== 'deleteContentBackward') return false;
+      if (!blankCharacterToAction(view.state, tr => view.dispatch(tr))) return false;
+      event.preventDefault();
+      return true;
+    },
+  };
+  return plugin;
 }

@@ -47,11 +47,16 @@ Opens at `http://localhost:5173`. `npm run build` / `npm run preview` for a prod
 
 The top-right fullscreen icon hides the sidebar and editor headers for focused writing. In fullscreen it stays visible at half opacity; click it again or press Escape to leave. Your selection, undo history, and sidebar preference are retained.
 
+**Find and replace** — Cmd/Ctrl-F opens search for the current scene. Matches are highlighted, with previous/next navigation, optional case matching, individual replacement, and Replace All. Enter/Shift-Enter in Find moves forward/backward; Escape in the panel closes it. Replace All is one undo step.
+
 Available automations:
 - Tab / Shift-Tab cycles element type, except on empty Character blocks or blocks containing a recent character name.
 - For these, Tab cycles names forward and Shift-Tab backward, wrapping through the same list.
 - Enter smart-continues into whichever type usually follows (Character → Dialogue → Character, etc.), and on an already-blank line drops back to Action instead of chaining another empty element.
 - A Notion-style slash-command menu (`/`) offers all six types, filtered by prefix match, navigable with arrow keys. Previous / Next controls in the header walk every beat across every act in outline order. Scroll-to-anchor when opened from a beat card or a Screenplay line, with a Back button in the top bar.
+- Character cues, scene headings, and transitions are stored uppercase, including pasted text and search replacements.
+- Backspace on an empty Character cue changes it to an empty Action block; a second Backspace joins the preceding block.
+- Empty-block hints are visual overlays, with the caret before the hint; they are never saved as document text.
 - Automatic Parentheticals. When enabled, typing `(` in an empty Dialogue or Action block changes it to Parenthetical. This also works after finishing dialogue: press Enter, then type `(` in the empty Character cue to add a trailing direction.
 - Enter after a parenthetical **continues as Dialogue**; use `/C` and Enter to choose a new Character instead. Parentheticals stay closely attached to their dialogue, with extra separation before the next character. The editor and read-only Screenplay view share these spacing rules.
 
