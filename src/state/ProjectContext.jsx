@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { createSampleProject, createEmptyProject, defaultTitlePage, defaultDocTypes } from './sampleData.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
@@ -6,6 +6,18 @@ import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
 import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
 import { loadNativeState, saveNativeState } from './nativeSqliteStorage.js';
+import {
+  isICloudSyncAvailable,
+  getICloudFolder,
+  pickICloudFolder as pickICloudFolderRaw,
+  disconnectICloudFolder as disconnectICloudFolderRaw,
+  listSyncedProjects,
+  readSyncedProject,
+  deleteSyncedProject,
+  subscribeToICloudChanges,
+  writeProjectDebounced,
+  hasPendingWrite,
+} from './iCloudSync.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
@@ -121,6 +133,15 @@ function migrateSingularLabels(p) {
   };
 }
 
+// The full migration pipeline, composed once so it can be reused both for
+// projects restored from local storage (below) and for a project JSON
+// imported from an iCloud-synced file -- the latter needs to be just as
+// forward-compatible as anything loaded locally, since it could easily
+// have been written by an older build on the other device.
+function migrateProject(p) {
+  return migrateSingularLabels(migrateDocTypes(migrateTitlePage(migrateProjectToPerCardDocs(p))));
+}
+
 // Builds the initial `projects` map from whatever was persisted, migrating
 // the pre-multi-project shape (a single `project`) if that's what's there,
 // or seeding a fresh install with one real project plus empty-template
@@ -129,30 +150,19 @@ function migrateSingularLabels(p) {
 // which is a no-op for anything already in the current shape.
 function buildInitialProjects(persisted) {
   if (persisted?.projects && typeof persisted.projects === 'object') {
-    return Object.fromEntries(
-      Object.entries(persisted.projects).map(([id, p]) => [
-        id,
-        migrateSingularLabels(migrateDocTypes(migrateTitlePage(migrateProjectToPerCardDocs(p)))),
-      ])
-    );
+    return Object.fromEntries(Object.entries(persisted.projects).map(([id, p]) => [id, migrateProject(p)]));
   }
   if (persisted?.project) {
     const legacy = persisted.project;
     const id = legacy.id ?? generateId('project');
     return {
-      [id]: migrateSingularLabels(
-        migrateDocTypes(
-          migrateTitlePage(
-            migrateProjectToPerCardDocs({
-              ...legacy,
-              id,
-              screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
-              characterBible: legacy.characterBible ?? [],
-              notesResearch: legacy.notesResearch ?? [],
-            })
-          )
-        )
-      ),
+      [id]: migrateProject({
+        ...legacy,
+        id,
+        screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
+        characterBible: legacy.characterBible ?? [],
+        notesResearch: legacy.notesResearch ?? [],
+      }),
     };
   }
   const sample = createSampleProject();
@@ -208,6 +218,14 @@ export function ProjectProvider({ children }) {
     return Object.keys(projects)[0];
   });
   const [lastSavedAt, setLastSavedAt] = useState(() => persisted?.lastSavedAt ?? null);
+  // The folder (if any) projects are mirrored into for iCloud sync -- see
+  // iCloudSync.js. Not itself persisted here; electron/main.cjs remembers
+  // it across launches and hands it back via getICloudFolder() on mount.
+  const [iCloudFolder, setICloudFolder] = useState(null);
+  // Kept in sync via an effect below so the async reconcile/import
+  // functions (which can't just close over `projects` from render, since
+  // they run later, after external events) always read the current value.
+  const projectsRef = useRef(projects);
   const [view, setView] = useState({ name: 'outline', payload: null });
   const [dragState, setDragState] = useState(null); // { cardId, fromActId }
   const [dropPreview, setDropPreview] = useState(null); // { actId, beforeCardId }
@@ -348,6 +366,116 @@ export function ProjectProvider({ children }) {
     const timer = setTimeout(() => setToast(null), 1800);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+
+  // Pulls one project in from its synced file, if there's actually
+  // anything to pull. Three separate escape hatches, each covering a
+  // different way this could otherwise go wrong:
+  //  - a pending debounced write means *this* device edited the project
+  //    seconds ago and hasn't sent that edit out yet -- importing now
+  //    would clobber it with an older version.
+  //  - byte-identical content means this is almost certainly our own
+  //    write echoing back (the fs watcher's dedup in main.cjs should
+  //    already filter these out, but content equality is a cheap, robust
+  //    second check that doesn't depend on timing).
+  //  - a missing/corrupt file just no-ops rather than erroring.
+  // Reused for both the initial reconcile-on-connect pass (showNotice:
+  // false -- restoring from iCloud on a fresh device is expected, not a
+  // surprise) and live updates while the app stays open (showNotice: true).
+  const importFromICloud = useCallback(
+    async (id, { showNotice = false } = {}) => {
+      if (hasPendingWrite(id)) return;
+      const raw = await readSyncedProject(id);
+      if (!raw) return;
+      const localProject = projectsRef.current[id];
+      if (localProject && JSON.stringify(localProject) === raw) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const migrated = migrateProject({ ...parsed, id });
+      setProjects((prev) => ({ ...prev, [id]: migrated }));
+      if (showNotice) showToast(`“${migrated.name}” updated from iCloud`);
+    },
+    [showToast]
+  );
+
+  const pickICloudFolder = useCallback(async () => {
+    const folder = await pickICloudFolderRaw();
+    setICloudFolder(folder);
+  }, []);
+
+  const disconnectICloudFolder = useCallback(async () => {
+    await disconnectICloudFolderRaw();
+    setICloudFolder(null);
+  }, []);
+
+  // On mount (and whenever a folder is newly picked), pull in whatever's
+  // already sitting in the synced folder -- covers changes made on the
+  // other device while this one was closed, which the live watcher below
+  // can't have seen.
+  useEffect(() => {
+    if (!isICloudSyncAvailable() || !ready) return;
+    let cancelled = false;
+    (async () => {
+      const folder = await getICloudFolder();
+      if (cancelled) return;
+      setICloudFolder(folder);
+      if (!folder) return;
+      const entries = await listSyncedProjects();
+      if (cancelled) return;
+      for (const { id } of entries) {
+        // eslint-disable-next-line no-await-in-loop -- one project at a
+        // time keeps this readable; the list is small and this only runs
+        // once per connect, not per keystroke.
+        await importFromICloud(id, { showNotice: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Live updates while the app stays open -- the other device (or this
+  // one, from outside the app entirely) changed a project file, and
+  // main.cjs's folder watcher noticed. Subscribes once; importFromICloud
+  // itself always reads the current folder/project state via refs, so a
+  // stale closure here isn't a concern.
+  useEffect(() => {
+    if (!isICloudSyncAvailable()) return undefined;
+    return subscribeToICloudChanges(({ id }) => {
+      importFromICloud(id, { showNotice: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirrors local edits out to the synced folder -- diffs `projects` by
+  // per-key object identity against the previous render (cheap and exact,
+  // since every mutation path in this file replaces just the entries it
+  // touched rather than the whole map) so only projects that actually
+  // changed get a debounced write scheduled, and a project that
+  // disappeared (deleted locally) gets its synced file removed too.
+  const prevProjectsForSyncRef = useRef(projects);
+  useEffect(() => {
+    if (!ready || !iCloudFolder) {
+      prevProjectsForSyncRef.current = projects;
+      return;
+    }
+    const prev = prevProjectsForSyncRef.current;
+    for (const [id, p] of Object.entries(projects)) {
+      if (prev[id] !== p) writeProjectDebounced(id, JSON.stringify(p));
+    }
+    for (const id of Object.keys(prev)) {
+      if (!(id in projects)) deleteSyncedProject(id);
+    }
+    prevProjectsForSyncRef.current = projects;
+  }, [projects, ready, iCloudFolder]);
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
 
@@ -926,6 +1054,10 @@ export function ProjectProvider({ children }) {
       dropDocType,
       toast,
       showToast,
+      iCloudSyncSupported: isICloudSyncAvailable(),
+      iCloudFolder,
+      pickICloudFolder,
+      disconnectICloudFolder,
     }),
     [
       sidebarCollapsed,
@@ -1010,6 +1142,9 @@ export function ProjectProvider({ children }) {
       dropDocType,
       toast,
       showToast,
+      iCloudFolder,
+      pickICloudFolder,
+      disconnectICloudFolder,
     ]
   );
 
