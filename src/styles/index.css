@@ -637,12 +637,6 @@ button {
    rule, a class selector, already outranks the plain `button` element
    selector). Higher specificity here restores it for the Editor too. */
 .editor-page .ProseMirror { outline: none; font-family: var(--script-font-family); }
-/* Hides the blinking text-insertion caret only -- not any range-selection
-   highlight -- for the brief window touchCaretPlugin.js is correcting a
-   tap's position. Without this, a wrong-then-corrected caret painted a
-   frame or two apart reads as a distracting jump even though the whole
-   thing happens in under 20ms. */
-.ProseMirror.touch-caret-correcting { caret-color: transparent; }
 .editor-page .ProseMirror .sp-scene,
 .editor-page .ProseMirror .sp-action,
 .editor-page .ProseMirror .sp-char,
