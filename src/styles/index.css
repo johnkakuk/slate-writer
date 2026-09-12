@@ -645,19 +645,6 @@ button {
   pointer-events: none;
 }
 
-/* Character-name / "(CONT'D)" autocomplete ghost text -- unlike the
-   placeholder above, this is a real (non-editable) widget node, not a
-   pseudo-element, since Tab needs to read its exact text back out to
-   accept it (see characterAutocompletePlugin.js). Bold to match the
-   Character line's own weight, at reduced opacity to still read as "not
-   typed yet." */
-.autocomplete-ghost {
-  color: var(--placeholder-ink);
-  opacity: 0.55;
-  font-weight: 700;
-  pointer-events: none;
-}
-
 /* ---------------- Slash command menu ---------------- */
 .slash-menu {
   position: fixed;

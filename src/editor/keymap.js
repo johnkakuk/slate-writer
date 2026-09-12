@@ -3,7 +3,6 @@ import { baseKeymap } from 'prosemirror-commands';
 import { undo, redo } from 'prosemirror-history';
 import { nextElementType, ENTER_CONTINUATION } from './elementTypes.js';
 import { generateId } from '../utils/id.js';
-import { acceptCharacterSuggestion } from './characterAutocompletePlugin.js';
 
 // Tab / Shift-Tab: cycle the current block through the element types, the
 // same manual-override mechanic real screenwriting software uses. The
@@ -93,18 +92,14 @@ function smartEnter(state, dispatch) {
 // editorKeymap() itself runs once at mount and never re-runs, same
 // constraint as this editor's other settings-driven plugins.
 export function editorKeymap(getRecentNames) {
-  const acceptSuggestion = acceptCharacterSuggestion(getRecentNames);
   const nameCycle = cycleCharacterName(getRecentNames);
   const typeCycle = cycleType(1);
   return keymap({
     ...baseKeymap,
     Enter: smartEnter,
-    // In priority order: accept a visible autocomplete ghost suggestion,
-    // then cycle through recently-used names on an empty/cycling Character
-    // block, then fall back to the original type-cycle. Mutually exclusive
-    // by construction -- a suggestion only shows for a non-empty, non-
-    // recent-name prefix, which is exactly the case name-cycling declines.
-    Tab: (state, dispatch) => acceptSuggestion(state, dispatch) || nameCycle(state, dispatch) || typeCycle(state, dispatch),
+    // Cycle through recently-used names on an empty/cycling Character
+    // block first, then fall back to the original type-cycle.
+    Tab: (state, dispatch) => nameCycle(state, dispatch) || typeCycle(state, dispatch),
     'Shift-Tab': cycleType(-1),
     'Mod-z': undo,
     'Shift-Mod-z': redo,

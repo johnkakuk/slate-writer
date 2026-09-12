@@ -18,7 +18,6 @@ import { touchCaretPlugin } from '../../editor/touchCaretPlugin.js';
 import { selectionResyncPlugin } from '../../editor/selectionResyncPlugin.js';
 import { activeLinePlugin, activeLineKey, LINE_MEASURE_META } from '../../editor/activeLinePlugin.js';
 import { autoParentheticalPlugin } from '../../editor/autoParentheticalPlugin.js';
-import { characterAutocompletePlugin } from '../../editor/characterAutocompletePlugin.js';
 import { getRecentCharacterNames } from '../../editor/characterNames.js';
 import { computeScriptPagination } from '../../export/paginate.js';
 
@@ -246,7 +245,6 @@ export default function Editor() {
         activeLinePlugin(),
         touchCaretPlugin(),
         autoParentheticalPlugin(autoParentheticalRef),
-        characterAutocompletePlugin(() => recentCharacterNamesRef.current),
       ],
     });
 
