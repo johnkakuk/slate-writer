@@ -15,6 +15,7 @@ import { emptyDoc } from '../../editor/docJson.js';
 import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
 import { touchCaretPlugin } from '../../editor/touchCaretPlugin.js';
+import { selectionResyncPlugin } from '../../editor/selectionResyncPlugin.js';
 import { activeLinePlugin, activeLineKey, LINE_MEASURE_META } from '../../editor/activeLinePlugin.js';
 import { autoParentheticalPlugin } from '../../editor/autoParentheticalPlugin.js';
 import { characterAutocompletePlugin } from '../../editor/characterAutocompletePlugin.js';
@@ -234,6 +235,7 @@ export default function Editor() {
     const state = EditorState.create({
       doc: Node.fromJSON(schema, initialDocRef.current),
       plugins: [
+        selectionResyncPlugin(),
         slashMenuPlugin(),
         editorKeymap(() => recentCharacterNamesRef.current),
         history(),
@@ -277,6 +279,29 @@ export default function Editor() {
         // to the OLD anchor one transaction after every tap, undoing the
         // tap's own correct no-scroll handling and sometimes leaving the
         // highlight on the wrong line.
+        //
+        // Both branches below defer their actual measurement (coordsAtPos/
+        // getBoundingClientRect, both layout-forcing) to the next animation
+        // frame rather than doing it synchronously right here. This isn't
+        // just a perf nicety: Home/End/arrow-key caret moves aren't bound in
+        // our keymap, so the browser moves the native caret on its own and
+        // ProseMirror resyncs its own state.selection from that
+        // *asynchronously* afterward. Forcing a synchronous layout inside
+        // dispatchTransaction on every single keystroke ate into the time
+        // available for that pending resync to land before the next
+        // keystroke's own dispatch -- e.g. End then Enter in quick
+        // succession -- so Enter could fire while PM's selection was still
+        // stale from *before* End moved the caret, splitting the wrong
+        // block entirely. Confirmed via a repro: with the sync measurement
+        // in place, End immediately after a click intermittently left a
+        // totally different (and completely wrong) block split into two;
+        // deferring it stopped the corruption outright in the same repro
+        // run many times over. This -- not any single-plugin bug -- is also
+        // the likely explanation for the "ghost autocomplete sometimes
+        // doesn't show" and "caret visually one line off from the active
+        // line indicator, self-corrects on next keystroke" reports: both
+        // are exactly what stale-selection-for-one-tick looks like
+        // elsewhere in the editor.
         if (typewriterModeRef.current && !tr.getMeta(LINE_MEASURE_META)) {
           if (tr.getMeta('pointer')) {
             // A real click/tap-driven selection change, per PM's own
@@ -288,16 +313,23 @@ export default function Editor() {
             // next-frame correction of the same tap (which dispatches its
             // own follow-up "pointer" transaction), and a couple of settle
             // frames after for native autoscroll-on-focus that lands late.
+            // lockScrollAgainstPointer itself stays synchronous -- it only
+            // reads scrollTop (cheap, not layout-forcing the way
+            // coordsAtPos/getBoundingClientRect are), and needs to capture
+            // that baseline *before* anything else has a chance to move it.
             const scrollEl = mountRef.current?.closest('.editor-scroll');
             lockScrollAgainstPointer(scrollEl);
-            adoptCurrentFractionAsAnchor(editorView);
-            reassertScrollLock(scrollEl);
             requestAnimationFrame(() => {
+              if (viewRef.current !== editorView) return;
+              adoptCurrentFractionAsAnchor(editorView);
               reassertScrollLock(scrollEl);
               requestAnimationFrame(() => reassertScrollLock(scrollEl));
             });
           } else {
-            scrollToFraction(editorView, typewriterAnchorRef.current);
+            requestAnimationFrame(() => {
+              if (viewRef.current !== editorView) return;
+              scrollToFraction(editorView, typewriterAnchorRef.current);
+            });
           }
         }
       },

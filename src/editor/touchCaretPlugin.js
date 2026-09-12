@@ -38,7 +38,42 @@ export function touchCaretPlugin() {
               return;
             }
             if (typeof pos !== 'number' || pos < 0) return;
-            const $pos = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size));
+            let $pos = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size));
+
+            // A second, distinct WebKit quirk from the paragraph-start one
+            // above: tapping in the empty space to the *right* of a short
+            // line's actual text (well past the last character, but still
+            // within the block) can resolve ambiguously to the very START
+            // of that line instead of its end -- verified by comparing the
+            // resolved position's own on-screen coordinates against where
+            // the tap actually landed. If the tap is well to the right of
+            // where this (start-of-line) position renders, the intended
+            // target was almost certainly the end of that visual line, not
+            // its start. Finds the true end of *this* line specifically
+            // (not necessarily the whole block, which may wrap across
+            // several) via the same full-width-block technique
+            // activeLinePlugin.js uses to measure a wrapped line's own
+            // bounds: these blocks span their container's full width, so
+            // asking what sits at the block's right edge, at the tap's own
+            // Y, lands on this line's trailing position.
+            if ($pos.parentOffset === 0) {
+              const resolvedCoords = view.coordsAtPos($pos.pos);
+              if (touch.clientX > resolvedCoords.right + 4) {
+                const blockStart = $pos.before($pos.depth);
+                const blockNode = view.state.doc.nodeAt(blockStart);
+                const blockDOM = blockNode && view.nodeDOM(blockStart);
+                if (blockDOM instanceof HTMLElement) {
+                  const rect = blockDOM.getBoundingClientRect();
+                  const endResult = view.posAtCoords({ left: rect.right - 1, top: touch.clientY });
+                  if (endResult) {
+                    const blockEnd = blockStart + blockNode.nodeSize - 1;
+                    const clamped = Math.min(Math.max(endResult.pos, blockStart + 1), blockEnd);
+                    $pos = view.state.doc.resolve(clamped);
+                  }
+                }
+              }
+            }
+
             const sel = TextSelection.near($pos);
             if (sel.eq(view.state.selection)) return;
             // Tagged "pointer" -- the same meta PM's own click handling sets

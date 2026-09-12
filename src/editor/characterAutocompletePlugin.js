@@ -9,18 +9,38 @@ const CONTD_SUGGESTION = "CONT'D)";
 // paren can suggest completing it to "(CONT'D)".
 const CONTD_PATTERN = /^([A-Z0-9 .'-]+?)\s*\(([A-Z']*)$/;
 
+// The most recent Character block's name strictly before `beforePos`, or
+// null -- the "last speaker." (CONT'D) only makes sense as a suggestion
+// when the name being typed IS the last speaker resuming after an
+// interruption (typically an action line); a name that merely once had an
+// open paren isn't enough on its own. Top-level blocks only (this schema's
+// scene doc is a flat list -- see characterNames.js's own scan), so a
+// plain Node.forEach over the doc's direct children is enough.
+function findLastSpeakerName(doc, beforePos) {
+  let lastName = null;
+  doc.forEach((node, offset) => {
+    if (offset >= beforePos) return;
+    if (node.type.name !== 'character') return;
+    const text = node.textContent.trim().toUpperCase();
+    if (text) lastName = text;
+  });
+  return lastName;
+}
+
 // What to ghost-suggest for a Character block's current text, or null.
 // Scoped deliberately narrow: a name-in-progress that's an unambiguous
 // prefix of exactly one recently-used name, or the "(CONT'D)" convention
-// for a name that already has "(" open after it -- not a general-purpose
-// autocomplete engine.
-function computeSuggestion(node, recentNames) {
+// for a name that already has "(" open after it AND is actually the last
+// speaker -- not a general-purpose autocomplete engine.
+function computeSuggestion(node, recentNames, lastSpeakerName) {
   const text = node.textContent;
   if (!text) return null;
   const upper = text.toUpperCase();
 
   const contdMatch = upper.match(CONTD_PATTERN);
   if (contdMatch) {
+    const namePart = contdMatch[1].trim();
+    if (!lastSpeakerName || namePart !== lastSpeakerName) return null; // not actually resuming the last speaker
     const parenPrefix = contdMatch[2];
     if (!CONTD_SUGGESTION.startsWith(parenPrefix)) return null;
     const remainder = CONTD_SUGGESTION.slice(parenPrefix.length);
@@ -39,7 +59,8 @@ function suggestionAt(state, getRecentNames) {
   const node = $from.parent;
   if (node.type.name !== 'character') return null;
   if ($from.parentOffset !== node.content.size) return null;
-  const suggestion = computeSuggestion(node, getRecentNames());
+  const lastSpeakerName = findLastSpeakerName(state.doc, $from.before($from.depth));
+  const suggestion = computeSuggestion(node, getRecentNames(), lastSpeakerName);
   return suggestion ? { pos: $from.pos, text: suggestion } : null;
 }
 
