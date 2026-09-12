@@ -548,12 +548,36 @@ button {
   z-index: -1;
 }
 
-/* Typewriter Mode's other two highlight styles (Settings > Editor) --
-   .active-line above is "paragraph". Both are plain inline/background
-   styling with no bleed trick: unlike a whole paragraph, a single line
-   or an underline reads as *of* the text, not as an ambient full-width
-   band, so there's no page-edge-to-page-edge effect to reproduce here. */
-.active-line-text { background: var(--accent-hover-bg); border-radius: 2px; }
+/* "Line" mode's own full-page-width band, same bleed trick as .active-line
+   above -- just scoped to one visual line's own row within the block
+   (--active-line-top/--active-line-height, set per-decoration by
+   activeLinePlugin.js from its own DOM measurement of the caret's line)
+   instead of the whole paragraph. This is a class + inline custom
+   properties on the block itself (a Decoration.node, same as .active-line),
+   NOT a span wrapped around the line's own text -- an earlier version did
+   that, and it fed back on itself: inserting a real span into the text
+   changed the DOM at the exact coordinates the plugin's own next
+   measurement probed, so the measurement oscillated between two answers
+   forever instead of converging. Never wrapping the text at all sidesteps
+   that class of bug entirely -- painting this band can't change anything
+   the plugin measures.
+   position: relative + z-index: 0 matter here exactly as they do for
+   .active-line, for the same reason (see its own comment above). */
+.active-line-text { position: relative; z-index: 0; }
+.active-line-text::after {
+  content: '';
+  position: absolute;
+  top: var(--active-line-top); height: var(--active-line-height);
+  left: -2000px; right: -2000px;
+  background: var(--accent-hover-bg);
+  border-radius: 2px;
+  z-index: -1;
+}
+
+/* Typewriter Mode's remaining highlight style (Settings > Editor):
+   underline is plain inline styling with no bleed trick -- unlike a full
+   line or paragraph, it reads as *of* the text, not an ambient band, so
+   there's no page-edge-to-page-edge effect to reproduce here. */
 .active-line-underline {
   text-decoration: underline;
   text-decoration-color: var(--accent);
