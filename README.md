@@ -4,7 +4,7 @@ A lightweight, local-first screenwriting app.
 
 ## Status
 
-Local-first, multi-project, with no backend or accounts. The web app stores state in `localStorage`; iOS and Electron use SQLite. Electron also supports optional project-file mirroring to a folder you choose, including an iCloud Drive folder. Ships as a web app, an iOS app shell via Capacitor (see [Running on iOS](#running-on-ios)), and a native desktop app via Electron (see [Running on Desktop](#running-on-desktop)).
+Local-first, multi-project, with no backend or accounts. The web app stores state in `localStorage`; iOS and Electron use SQLite. The installed iOS and macOS apps also support optional shared-folder sync through a folder you choose, including iCloud Drive. Ships as a web app, an iOS app shell via Capacitor (see [Running on iOS](#running-on-ios)), and a native desktop app via Electron (see [Running on Desktop](#running-on-desktop)).
 
 ## Tech stack
 
@@ -27,7 +27,7 @@ Opens at `http://localhost:5173`. `npm run build` / `npm run preview` for a prod
 
 ## What's built
 
-**App shell** — iOS status-bar clearance at the top, app surfaces extending to the bottom edge, and home-indicator clearance inside the sidebar footer. Collapsible sidebar contains unified file tree, Settings, live autosave footer.
+**App shell** — iOS status-bar clearance at the top, app surfaces extending to the bottom edge, and home-indicator clearance inside the sidebar footer. Collapsible sidebar contains unified file tree, Settings, and a compact footer for autosave and sync status.
 
 **Multi-project** — Each project contains an outline/beat editor, a screenplay view, and a title page editor. A markdown notebook system is in place as well for keeping track of other data. Contextual menus are used as needed throughout.
 
@@ -45,6 +45,8 @@ Opens at `http://localhost:5173`. `npm run build` / `npm run preview` for a prod
 
 **Editor** — ProseMirror-based, six screenplay element types (scene heading, action, character, dialogue, parenthetical, transition) with correct margins/caps per type. Each beat card owns its own scene document (`card.sceneDoc`) — opening a different beat is a genuinely separate document, not a scroll position within a shared one.
 
+The top-right fullscreen icon hides the sidebar and editor headers for focused writing. In fullscreen it stays visible at half opacity; click it again or press Escape to leave. Your selection, undo history, and sidebar preference are retained.
+
 Available automations:
 - Tab / Shift-Tab cycles element type, except on empty Character blocks or blocks containing a recent character name.
 - For these, Tab cycles names forward and Shift-Tab backward, wrapping through the same list.
@@ -61,7 +63,7 @@ Available automations:
 
 New docs seed from an optional template. Right-click a file for Edit / Duplicate / Delete (delete confirm-protected, same pattern as beat cards).
 
-**Settings** — Dark/Light theme toggle; two independent font pickers (`src/state/fontOptions.js`), 15 curated options across Monospace/Serif/Sans-serif, each shown live in itself in a custom dropdown — one for the UI (chrome, sidebar, cards), one for the script (Editor + Screenplay view), laid out side by side in a two-column grid that collapses to one column on narrow viewports. Both persisted independently. Typewriter Mode, highlight style, and Automatic Parentheticals are also configurable here. On Electron, iCloud Sync can mirror project files into a selected folder; this folder integration is not yet available on web or iOS.
+**Settings** — Dark/Light theme toggle; two independent font pickers (`src/state/fontOptions.js`), 15 curated options across Monospace/Serif/Sans-serif, each shown live in itself in a custom dropdown — one for the UI (chrome, sidebar, cards), one for the script (Editor + Screenplay view), laid out side by side in a two-column grid that collapses to one column on narrow viewports. Both persisted independently. Typewriter Mode, highlight style, and Automatic Parentheticals are also configurable here. On iOS and macOS Electron, iCloud Sync connects to a shared folder, with per-document revisions, advisory editing guards, conflict choices, and recovery history. See [Shared-folder sync](SYNC.md) for setup and handoff instructions. The web/PWA build remains local.
 
 **Export PDF** — a full industry-format screenplay PDF (`src/export/screenplayPdf.js`), triggered from the Screenplay view: the Title Page followed by every beat's scene content concatenated in outline order — 12pt Courier, standard 1.5"/1" margins and per-element indents, bold scene headings/character cues/transitions (matching the in-app read-only view), correct blank-line spacing between elements (with extra breathing room before a new scene heading), and page numbers starting on script page 2.
 
@@ -83,7 +85,7 @@ After shared editor or CSS changes, rebuild and sync again, then Stop/Run in Xco
 
 ## Running on Desktop
 
-Slate Writer also ships as a native desktop app via **Electron** (`electron/main.cjs` — a `BrowserWindow` loading the built web app), packaged with `electron-builder`. State is stored in `slate-writer.db` under Electron's user-data directory (`~/Library/Application Support/Slate Writer` on macOS). Older localStorage state migrates when the database is first populated. Optional folder mirroring is separate from the local SQLite autosave.
+Slate Writer also ships as a native desktop app via **Electron** (`electron/main.cjs` — a `BrowserWindow` loading the built web app), packaged with `electron-builder`. State is stored in `slate-writer.db` under Electron's user-data directory (`~/Library/Application Support/Slate Writer` on macOS). Older localStorage state migrates when the database is first populated. Optional shared-folder sync runs alongside local SQLite autosave. Desktop scripts also compile the native Swift file-coordination helper (requires Xcode command-line tools on macOS).
 
 **To build and run:**
 ```
@@ -96,26 +98,42 @@ npm run electron:dist      # builds and packages a real installable app (release
 
 ## What's stubbed (not real yet)
 
-- **Trash / soft delete** — doesn't exist yet, not even a placeholder in the sidebar (deliberately removed rather than left as dead UI). Beat card and doc deletion are currently **permanent**.
+- **Trash / soft delete** — doesn't exist yet, not even a placeholder in the sidebar (deliberately removed rather than left as dead UI). Without sync history, deleted writing is not recoverable. Once folder sync has been enabled, its recovery history can restore writing into a separate project; there is still no conventional Trash UI.
 - **`.fountain` file import/export** — not built. Each scene persists as ProseMirror JSON, not Fountain. (Pasting Fountain-*formatted text* into the Editor does work, and reuses the same line-classification logic a real `.fountain` importer would need — see [What's built](#whats-built) — but there's no way to open or save an actual `.fountain` file yet.)
 
 ## Roadmap
 
 Roughly in the order they'd unblock real use:
 
-1. **Cloud backend (MongoDB + real user auth), deployed on Vercel** — the actual "access it from anywhere" goal. A genuine architecture shift, not a feature add: the local persistence layer would need a network synchronization layer, autosave becomes debounced instead of instant, and it needs a decision between bolting a thin `/api` layer onto the current Vite SPA or migrating to Next.js (which makes serverless functions + auth on Vercel considerably less painful). Deliberately deferred in favor of the Electron desktop build below, which unblocks real use today with no rewrite.
-2. **Trash / soft delete** — right now "Delete" (beat cards, acts, docs, and projects alike) is permanent. Needs an actual trash mechanism before that's safe to rely on; deliberately not a stub UI in the meantime.
+1. **Web/account-based sync** — iCloud folder sync now covers the installed iOS and macOS apps. Browser access and non-Apple platforms would need a separate transport/backend.
+2. **Trash / soft delete** — add a conventional Trash UI. Sync-enabled libraries now retain deleted writing in recovery history.
 3. **`.fountain` file serializer + parser** — doc → Fountain (for export and true portability) and Fountain → doc (for opening a `.fountain` file directly, not just pasting its contents). The line-classification half of the parser direction already exists (`src/editor/fountainParse.js`, built for paste) — this is mostly "read/write an actual file" plus a doc → Fountain serializer.
 4. **PDF export polish** — `(MORE)` / `(CONT'D)` markers when Dialogue itself splits across a page break; see [Known limitations](#known-limitations).
 5. **Touch interaction polish** — continue testing drag handles, scrolling, and editing on physical devices.
-6. **Revision history** — explicitly deferred during planning; can come back if it turns out to be needed.
+6. **Revision history polish** — sync now retains recoverable revisions; compacting long histories while supporting offline devices remains future work.
 7. **Real app icon / splash art** — both iOS and desktop currently use the same placeholder green "S" mark (`assets/icon.png`), see [Running on iOS](#running-on-ios) and [Running on Desktop](#running-on-desktop).
 8. **Multiple selections** - enable multiple file selections and bulk operations in sidebar menu
 
+## Future consideration: App Store release
+
+A one-time **$4.99 iPad app** is a possible future release, not a committed launch plan. Slate's screenplay editor, outline board, local persistence, PDF export, and optional iCloud folder sync give it a credible basis for Apple's minimum-functionality requirement. Capacitor is not itself a barrier, but approval depends on the submitted app and App Review. See [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/).
+
+Before submitting:
+
+- **Bundle fonts locally**, with their required licenses. The current Google Fonts requests can leave offline installs using fallback fonts; typography and pagination should remain consistent without a connection.
+- **Choose device support deliberately.** The Xcode project currently targets iPhone and iPad. Consider an iPad-only first release unless the phone experience is also fully tested.
+- **Complete privacy and SDK disclosures.** Add an accessible privacy-policy link in the app and store listing, complete App Store privacy answers, and audit privacy manifests and required-reason API declarations across native code and dependencies. Apple explicitly lists Capacitor in its [third-party SDK requirements](https://developer.apple.com/support/third-party-SDK-requirements/).
+- **Validate a clean release install:** touch-only and hardware-keyboard writing, export, airplane-mode editing and relaunch, sync conflicts, and upgrades that preserve existing documents. Prioritize dependable backup and recovery before taking responsibility for customers' writing.
+- **Prepare the listing and support:** final icon/screenshots, description, support contact/page, and review notes explaining that iCloud folder setup is optional. Describe sync's advisory editing guards accurately; do not promise strict locking or instant delivery.
+
+Distribution requires the [Apple Developer Program](https://developer.apple.com/programs/enroll/) ($99 USD/year as of September 2026). Free Personal Team provisioning expires after seven days, so periodic Xcode reinstalls remain the current personal-use bridge; see [Apple's account limits](https://developer.apple.com/help/account/basics/about-your-developer-account). Release configuration alone does not eliminate signing verification requirements.
+
+If enrolled and eligible for the [App Store Small Business Program](https://developer.apple.com/app-store/small-business-program/), its standard 15% commission leaves approximately $4.24 from a $4.99 sale before applicable taxes and adjustments—roughly 24 sales to cover annual membership, excluding other costs. Recheck pricing and Apple policies when a release is planned.
+
 ## Known limitations
 
-- **No shared cloud backend.** Web, iOS, and Electron each keep separate local state. Electron can mirror project files into a chosen folder, but this is not cross-platform account-based sync; the iOS/web folder integration is not implemented. Keep backups before clearing site data or deleting app data.
+- **iCloud delivery and editing warnings are advisory.** The installed iOS and macOS apps can share a selected iCloud Drive folder. Apple controls propagation, so immediate delivery and strict exclusive editing are not guaranteed. Conflicting edits retain both versions. Web/PWA state remains separate. See [SYNC.md](SYNC.md).
 - **Occasional caret movement while scrolling upward on iPad.** Intentional tap placement passed the user's physical-device retest, including Typewriter Line mode. A few scrolling-related occurrences remain; see [CARET_INVESTIGATION.md](CARET_INVESTIGATION.md).
-- **Beat card, doc, and project deletion are all permanent.** No undo, no Trash yet (see [Roadmap](#roadmap)).
+- **No Trash UI yet.** Recovery history retains writing after folder sync has been enabled; earlier deletions have no recovery history. Keep independent backups.
 - **PDF export doesn't add `(MORE)` / `(CONT'D)` markers when Dialogue splits across a page break.** A Character cue is always kept with at least its Dialogue's first line (see [Architecture](#architecture)), and a monologue longer than a full page does correctly continue onto the next one rather than running off the bottom — it just does so silently, without the marked-continuation convention a reader would expect.
 - **Blank lines in Character Bible / Notes & Research docs don't survive save/reload.** Markdown has no native way to represent a truly empty paragraph — a blank line is just a block separator, not content — so any blank line collapses away on the next load. (An earlier NBSP-based workaround existed for this and was deliberately removed as not worth the added complexity; type your own line breaks back in if this bites you.)

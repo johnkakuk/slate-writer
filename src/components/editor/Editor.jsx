@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { EditorState, TextSelection } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { history } from 'prosemirror-history';
@@ -37,7 +37,7 @@ const SCREENPLAY_ARRIVAL_FRACTION = 0.5;
 // elsewhere in the app. Each card owns a separate sceneDoc, so opening a
 // different card always means a fresh mount with a different document --
 // there is no "same file" to leak edits between cards.
-export default function Editor() {
+export default function Editor({ fullscreen = false, onExitFullscreen }) {
   const {
     project,
     view,
@@ -71,6 +71,10 @@ export default function Editor() {
 
   const mountRef = useRef(null);
   const viewRef = useRef(null);
+  const exitFullscreenRef = useRef(null);
+  useEffect(() => {
+    exitFullscreenRef.current = fullscreen ? onExitFullscreen : null;
+  }, [fullscreen, onExitFullscreen]);
   const initialDocRef = useRef(card?.sceneDoc ?? emptyDoc());
   const initialTargetRef = useRef(view.payload);
   const [slashState, setSlashState] = useState(null);
@@ -248,7 +252,11 @@ export default function Editor() {
       plugins: [
         selectionResyncPlugin(),
         slashMenuPlugin(),
-        editorKeymap(() => recentCharacterNamesRef.current),
+        editorKeymap(() => recentCharacterNamesRef.current, () => {
+          if (!exitFullscreenRef.current) return false;
+          exitFullscreenRef.current();
+          return true;
+        }),
         history(),
         autoCapsPlugin(),
         placeholderPlugin(),
@@ -491,6 +499,19 @@ export default function Editor() {
     return () => scrollEl.removeEventListener('scroll', handleScroll);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const previousFullscreen = useRef(fullscreen);
+  useLayoutEffect(() => {
+    if (previousFullscreen.current === fullscreen) return;
+    previousFullscreen.current = fullscreen;
+    const editorView = viewRef.current;
+    if (!editorView) return;
+    // Keep the same ProseMirror view, selection, and undo history. Re-measure
+    // line highlighting after the viewport changes and keep the caret in view.
+    editorView.dispatch(editorView.state.tr.setMeta(LINE_MEASURE_META, true));
+    scrollToFraction(editorView, typewriterModeRef.current ? typewriterAnchorRef.current : SCREENPLAY_ARRIVAL_FRACTION);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen]);
 
   const target = view.payload;
 

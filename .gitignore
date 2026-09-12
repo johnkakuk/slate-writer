@@ -3,3 +3,6 @@ dist
 release
 .DS_Store
 *.local
+
+# Native helper is rebuilt for the host architecture.
+electron/bin/

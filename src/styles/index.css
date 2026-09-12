@@ -296,6 +296,15 @@ button {
   border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim);
 }
 
+/* A quiet second line opens the full sync details when needed. */
+.sidebar-sync-status {
+  display: block; max-width: 100%; margin-top: 3px; padding: 0;
+  border: 0; background: none; color: inherit; font: inherit; line-height: 1.4;
+  text-align: left; cursor: pointer;
+}
+.sidebar-sync-status:hover { color: var(--text-secondary); }
+.sidebar-sync-status:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
 /* Below tablet width, the sidebar can't share space with the board the way
    it does on desktop (a fixed 250px sidebar leaves almost nothing for a
    ~390px phone screen) -- it becomes a slide-over drawer instead, using the
@@ -1001,3 +1010,50 @@ button {
    clearance so it doesn't crowd the scene tag/title beneath it, just far
    less than the 50px the 38px version needed. */
 .touch-platform .beat-card { padding-top: 40px; }
+
+/* Shared-folder sync notices stay outside the guarded editor. */
+.sync-view { display: contents; }
+.sync-notice { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 5px 18px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.sync-notice button { border: 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+.sync-error { color: #d87163; }
+.sync-folder { overflow-wrap: anywhere; }
+.sync-conflict, .sync-history { margin-top: 20px; }
+.sync-conflict h3 { font-size: 15px; }
+.sync-revision { padding: 12px; margin: 10px 0; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.sync-revision pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.5; }
+.sync-revision summary, .sync-history > summary { cursor: pointer; padding: 8px 0; }
+.sync-history select { display: block; max-width: 100%; margin: 10px 0; padding: 6px; color: var(--text); background: var(--bg); border: 1px solid var(--border); }
+
+/* Editor fullscreen uses the app viewport on web, Electron, and iOS alike. */
+.main { position: relative; }
+.editor-fullscreen-toggle {
+  position: absolute; top: 2px; right: 6px; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted);
+}
+.editor-fullscreen-toggle:hover { color: var(--text); }
+.editor-fullscreen-toggle:focus-visible { outline: 1px solid var(--accent); outline-offset: -5px; }
+.editor-fullscreen-toggle[aria-pressed="true"] { opacity: 0.5; }
+.app.editor-fullscreen > .sidebar,
+.app.editor-fullscreen .main > .topbar,
+.app.editor-fullscreen .editor-shell .screenplay-head { display: none; }
+.app.editor-fullscreen .editor-scroll { padding-top: 16px; padding-bottom: max(40px, env(safe-area-inset-bottom, 0px)); }
+.app.editor-fullscreen .sync-notice { padding-right: 56px; min-height: 47px; }
+
+/* Keep the layout change quick, then softly reveal the writing surface. */
+.editor-fullscreen-toggle { transition: opacity 160ms ease, color 160ms ease; }
+.editor-scroll { animation: editor-restore 180ms ease-out; }
+.app.editor-fullscreen .editor-scroll { animation: editor-expand 180ms ease-out; }
+@keyframes editor-expand {
+  from { opacity: 0.75; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes editor-restore {
+  from { opacity: 0.75; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor-scroll, .app.editor-fullscreen .editor-scroll { animation: none; }
+  .editor-fullscreen-toggle { transition: none; }
+}
