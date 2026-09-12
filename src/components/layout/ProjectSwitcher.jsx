@@ -2,6 +2,27 @@ import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import ProjectContextMenu from './ProjectContextMenu.jsx';
 import ProjectDeleteConfirmPopover from './ProjectDeleteConfirmPopover.jsx';
+import { useLongPress } from '../../utils/useLongPress.js';
+
+function ProjectItemButton({ project, active, onSelect, onOpenMenu }) {
+  const longPress = useLongPress((x, y) => onOpenMenu(x, y));
+  return (
+    <button
+      className={`project-item${active ? ' active' : ''}`}
+      onClick={onSelect}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onOpenMenu(e.clientX, e.clientY);
+      }}
+      onTouchStart={longPress.onTouchStart}
+      onTouchMove={longPress.onTouchMove}
+      onTouchEnd={longPress.onTouchEnd}
+      onTouchCancel={longPress.onTouchCancel}
+    >
+      {project.name}
+    </button>
+  );
+}
 
 export default function ProjectSwitcher() {
   const { projects, currentProjectId, switchProject, createProject, renameProject, openProjectMenu } =
@@ -53,6 +74,8 @@ export default function ProjectSwitcher() {
 
   const currentName = projects[currentProjectId]?.name ?? 'Untitled';
 
+  const triggerLongPress = useLongPress((x, y) => openProjectMenu(currentProjectId, currentName, x, y));
+
   return (
     <div className={`project${open ? ' open' : ''}`}>
       <button
@@ -62,6 +85,10 @@ export default function ProjectSwitcher() {
           e.preventDefault();
           openProjectMenu(currentProjectId, currentName, e.clientX, e.clientY);
         }}
+        onTouchStart={triggerLongPress.onTouchStart}
+        onTouchMove={triggerLongPress.onTouchMove}
+        onTouchEnd={triggerLongPress.onTouchEnd}
+        onTouchCancel={triggerLongPress.onTouchCancel}
       >
         <span>{currentName}</span>
         <span className="project-chevron">▾</span>
@@ -95,17 +122,13 @@ export default function ProjectSwitcher() {
                 />
               </form>
             ) : (
-              <button
+              <ProjectItemButton
                 key={p.id}
-                className={`project-item${p.id === currentProjectId ? ' active' : ''}`}
-                onClick={() => handleSelect(p.id)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  openProjectMenu(p.id, p.name, e.clientX, e.clientY);
-                }}
-              >
-                {p.name}
-              </button>
+                project={p}
+                active={p.id === currentProjectId}
+                onSelect={() => handleSelect(p.id)}
+                onOpenMenu={(x, y) => openProjectMenu(p.id, p.name, x, y)}
+              />
             )
           )}
           {filtered.length === 0 && <div className="project-empty">No projects match.</div>}

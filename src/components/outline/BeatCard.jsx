@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
+import { useLongPress } from '../../utils/useLongPress.js';
+import { useTouchDragHandle } from '../../utils/useTouchDragHandle.js';
+import { isTouchPlatform } from '../../utils/platform.js';
+import TouchDragHandle from '../shared/TouchDragHandle.jsx';
 
 function TrashIcon() {
   return (
@@ -47,10 +51,17 @@ function FlagIcon({ filled }) {
 }
 
 export default function BeatCard({ card, actId, number }) {
-  const { dragState, beginDrag, endDrag, navigate, updateCard, openCardMenu, requestDeleteCard } = useProject();
+  const { dragState, beginDrag, endDrag, updateDropPreview, dropCard, navigate, updateCard, openCardMenu, requestDeleteCard } =
+    useProject();
   const [editingField, setEditingField] = useState(null); // 'title' | 'description' | null
   const isDragging = dragState?.cardId === card.id;
   const editing = editingField !== null;
+  // Where a touch drag is currently hovering, so touchend (which fires on
+  // this card, the drag's origin, not wherever the finger ends up) knows
+  // which act to drop into -- unlike native HTML5 DnD, touch events don't
+  // bubble/target based on the finger's current position, they stay
+  // captured on the element the gesture started on.
+  const touchHoverActIdRef = useRef(null);
 
   function openEditor() {
     navigate('editor', { actId, cardId: card.id, label: card.title, source: 'beat card' });
@@ -61,6 +72,55 @@ export default function BeatCard({ card, actId, number }) {
     e.dataTransfer.setData('text/plain', card.id);
     beginDrag(card.id, actId);
   }
+
+  // Touch equivalent of the handleDragStart/Column.jsx-handleDragOver/
+  // handleDrop/endDrag chain above -- same underlying beginDrag/
+  // updateDropPreview/dropCard/endDrag calls, just driven by manually
+  // hit-testing document.elementFromPoint(x, y) each move instead of relying
+  // on the browser's native dragover targeting (which touch has no
+  // equivalent of).
+  function handleTouchDragMove(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const columnCardsEl = el?.closest('.board-col-cards');
+    const actIdAtPoint = columnCardsEl?.closest('[data-act-id]')?.dataset.actId;
+    if (!actIdAtPoint) return;
+    touchHoverActIdRef.current = actIdAtPoint;
+    const cardEls = [...columnCardsEl.querySelectorAll('.beat-card')].filter((c) => c.dataset.cardId !== card.id);
+    let beforeCardId = null;
+    let closestOffset = -Infinity;
+    cardEls.forEach((cardEl) => {
+      const box = cardEl.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) {
+        closestOffset = offset;
+        beforeCardId = cardEl.dataset.cardId;
+      }
+    });
+    updateDropPreview(actIdAtPoint, beforeCardId);
+  }
+
+  function handleTouchDrop() {
+    if (touchHoverActIdRef.current) dropCard(touchHoverActIdRef.current);
+    touchHoverActIdRef.current = null;
+    endDrag();
+  }
+
+  // Long-press anywhere on the card body opens the same menu a right-click
+  // would -- safe to attach broadly since it only ever cancels on
+  // movement, it never hijacks a scroll the way starting a drag from
+  // anywhere on the card would (see the handle below for why dragging
+  // itself needs a dedicated target instead).
+  const longPress = useLongPress((x, y) => {
+    if (editing) return;
+    openCardMenu(actId, card.id, x, y, { title: card.title });
+  });
+
+  const dragHandleRef = useTouchDragHandle({
+    onDragStart: () => beginDrag(card.id, actId),
+    onDragMove: handleTouchDragMove,
+    onDrop: handleTouchDrop,
+    enabled: isTouchPlatform(),
+  });
 
   function handleCardDoubleClick() {
     if (editing) return;
@@ -139,7 +199,12 @@ export default function BeatCard({ card, actId, number }) {
       onDragEnd={endDrag}
       onDoubleClick={handleCardDoubleClick}
       onContextMenu={handleContextMenu}
+      onTouchStart={longPress.onTouchStart}
+      onTouchMove={longPress.onTouchMove}
+      onTouchEnd={longPress.onTouchEnd}
+      onTouchCancel={longPress.onTouchCancel}
     >
+      <TouchDragHandle dragRef={dragHandleRef} corner="top-left" />
       <div className="beat-card-actions">
         <button
           className="beat-card-icon-btn"

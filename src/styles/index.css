@@ -108,6 +108,34 @@ button {
 .app {
   display: flex;
   height: 100vh;
+  /* 100vh alone left a phantom gap at the bottom of the screen on iOS
+     (Capacitor's WKWebView) roughly the size of the top safe-area inset --
+     100vh doesn't reliably equal the actual visible viewport height inside
+     a WKWebView the way it's assumed to on the web. 100dvh (dynamic
+     viewport height) tracks the real visible area instead; the 100vh
+     above is a fallback for browsers that don't support dvh at all, since
+     an unsupported value is ignored and the next declaration for the same
+     property wins. */
+  height: 100dvh;
+  /* Keep the status bar and side cutouts clear, but let the app's surfaces
+     reach the bottom edge. Bottom clearance belongs inside the footer,
+     otherwise the shell leaves a blank strip beneath every view. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
+    env(safe-area-inset-left);
+  /* Makes this the containing block for the sidebar's overlay positioning
+     below 820px (position: absolute; top: 0; bottom: 0) -- without this,
+     that measures against the next positioned ancestor up (or the
+     viewport itself), ignoring this element's own safe-area padding, so
+     the overlay's top/bottom didn't actually line up with the content
+     beside it on a notched device. */
+  position: relative;
+}
+/* Native (iOS) only, and only for the brief window before the async SQLite
+   read resolves -- see ProjectContext.jsx's bootstrap effect. */
+.app-loading {
+  height: 100vh;
+  height: 100dvh; /* see .app's own comment above */
+  background: var(--surface);
 }
 
 /* ---------------- Sidebar ---------------- */
@@ -133,7 +161,13 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 8px 10px 14px;
+  /* A fixed height (not min-height) -- .collapse-btn alone is 25px tall,
+     which combined with any vertical padding already exceeded a min-height
+     of 47px, so that never actually bound the box to .topbar's real
+     height. Fixed height + align-items: center sidesteps needing the
+     padding/content math to coincidentally add up right. */
+  height: 47px;
+  padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--border);
   font-size: 12px;
   font-weight: 700;
@@ -257,7 +291,35 @@ button {
 .file.active { color: var(--text); background: var(--accent-bg); border-radius: 4px; }
 .file .file-badge { font-size: 9px; color: var(--accent); }
 .file:disabled { color: var(--text-dim); cursor: default; }
-.sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim); }
+.sidebar-foot {
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim);
+}
+
+/* Below tablet width, the sidebar can't share space with the board the way
+   it does on desktop (a fixed 250px sidebar leaves almost nothing for a
+   ~390px phone screen) -- it becomes a slide-over drawer instead, using the
+   same sidebarCollapsed state/toggle that already exists for desktop's
+   collapse button, just interpreted as "closed" vs. "open overlay" here
+   rather than "narrow" vs. "full width". This is a functional stopgap, not
+   a considered mobile layout redesign -- the board's own 3-columns-wide
+   Outline view, for instance, still just horizontally scrolls one 260px
+   column at a time rather than being redesigned around a phone screen. */
+@media (max-width: 820px) {
+  .sidebar {
+    position: absolute; top: 0; left: 0; bottom: 0;
+    width: min(82vw, 300px);
+    z-index: 40;
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.45);
+    transition: transform 0.2s ease;
+  }
+  .sidebar.collapsed {
+    width: min(82vw, 300px);
+    transform: translateX(-100%);
+    box-shadow: none;
+  }
+  .sidebar-content { width: 100%; }
+}
 
 /* ---------------- Main ---------------- */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -271,8 +333,13 @@ button {
    responsiveness concern, not a layout-shift one. */
 .topbar {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
-  padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
-  min-height: 47px;
+  /* Fixed height, not min-height -- the reopen-btn shown when the sidebar
+     is collapsed is 26px tall, which combined with vertical padding
+     exceeded a min-height of 47px in that state, same issue as
+     .sidebar-h. Fixed height keeps both headers exactly equal regardless
+     of what's currently showing in either. */
+  height: 47px;
+  padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
 }
 .topbar-left { display: flex; align-items: center; gap: 8px; justify-self: start; }
 .topbar-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); justify-self: center; }
@@ -359,6 +426,22 @@ button {
 .beat-card-icon-btn.flagged { color: var(--accent); }
 .beat-card-icon-btn.flagged:hover { color: var(--accent); }
 
+/* Touch-only drag handle (see TouchDragHandle.jsx / useTouchDragHandle.js)
+   -- desktop keeps reordering via native HTML5 drag-and-drop from anywhere
+   on the card, so this stays hidden there entirely rather than adding a
+   redundant, confusing extra control. */
+.touch-drag-handle { display: none; }
+.touch-platform .touch-drag-handle {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; color: var(--text-dim); touch-action: none;
+}
+/* Floats the handle in a corner of the nearest position: relative ancestor
+   instead of sitting inline in normal flow -- see the `corner` prop on
+   TouchDragHandle.jsx. Used to keep it visually distinct from an unrelated
+   cluster of controls (BeatCard's delete/edit/flag icons), not grouped in
+   with them. */
+.touch-drag-handle-top-left { position: absolute; top: 8px; left: 8px; }
+
 .drop-indicator {
   height: 3px; border-radius: 2px;
   background: var(--accent);
@@ -444,7 +527,12 @@ button {
 .sp-action { margin-bottom: 12px; color: var(--page-text-secondary); }
 .sp-char { text-align: center; font-weight: 700; margin-bottom: 2px; }
 .sp-dial { max-width: 62%; margin: 0 auto 12px; text-align: left; }
-.sp-paren { text-align: center; font-style: italic; color: var(--page-text-secondary); margin-bottom: 2px; }
+.sp-paren { text-align: center; font-style: italic; color: var(--page-text-secondary); margin-bottom: 10px; }
+/* Keep attached speech blocks 2px apart by offsetting the preceding bottom
+   margin. Use forward sibling selectors: iOS retained a stale :has() style
+   on the previous parenthetical after /C changed its next block's type. */
+.sp-dial + .sp-paren { margin-top: -10px; }
+.sp-paren + .sp-dial { margin-top: -8px; }
 .sp-trans { text-align: right; font-weight: 700; margin-bottom: 12px; }
 /* A full page-width band behind the active line, not just a tint on its own
    (sometimes narrow, sometimes centered -- .sp-dial's `max-width: 62%`)
@@ -476,6 +564,43 @@ button {
   top: 0; bottom: 0; left: -2000px; right: -2000px;
   background: var(--accent-hover-bg);
   z-index: -1;
+}
+
+/* "Line" mode's own full-page-width band, same bleed trick as .active-line
+   above -- just scoped to one visual line's own row within the block
+   (--active-line-top/--active-line-height, set per-decoration by
+   activeLinePlugin.js from its own DOM measurement of the caret's line)
+   instead of the whole paragraph. This is a class + inline custom
+   properties on the block itself (a Decoration.node, same as .active-line),
+   NOT a span wrapped around the line's own text -- an earlier version did
+   that, and it fed back on itself: inserting a real span into the text
+   changed the DOM at the exact coordinates the plugin's own next
+   measurement probed, so the measurement oscillated between two answers
+   forever instead of converging. Never wrapping the text at all sidesteps
+   that class of bug entirely -- painting this band can't change anything
+   the plugin measures.
+   position: relative + z-index: 0 matter here exactly as they do for
+   .active-line, for the same reason (see its own comment above). */
+.active-line-text { position: relative; z-index: 0; }
+.active-line-text::after {
+  content: '';
+  position: absolute;
+  top: var(--active-line-top); height: var(--active-line-height);
+  left: -2000px; right: -2000px;
+  background: var(--accent-hover-bg);
+  border-radius: 2px;
+  z-index: -1;
+}
+
+/* Typewriter Mode's remaining highlight style (Settings > Editor):
+   underline is plain inline styling with no bleed trick -- unlike a full
+   line or paragraph, it reads as *of* the text, not an ambient band, so
+   there's no page-edge-to-page-edge effect to reproduce here. */
+.active-line-underline {
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 /* ---------------- Title page ---------------- */
@@ -718,6 +843,17 @@ button {
 }
 .settings-field-hint { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
 
+.settings-icloud-row { display: flex; gap: 8px; margin-top: 10px; }
+.settings-btn {
+  font-size: 11.5px; font-weight: 600; padding: 7px 14px; border-radius: 6px;
+  background: var(--accent); color: var(--accent-ink); border: none;
+}
+.settings-btn-quiet {
+  background: transparent; border: 1px solid var(--border-alt); color: var(--text-muted);
+}
+.settings-btn-quiet:hover { background: var(--surface); color: var(--text); }
+.settings-icloud-status { font-family: ui-monospace, monospace; word-break: break-all; }
+
 .font-select { position: relative; width: 100%; max-width: 320px; }
 .font-select-trigger {
   width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between;
@@ -820,3 +956,48 @@ button {
   background: var(--accent); color: var(--accent-ink); border: none;
 }
 .modal-save-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ---------------- Touch platform (iOS) ---------------- */
+/* Suppresses iOS's own long-press text-selection magnifier/callout on
+   elements that have a *custom* long-press behavior of their own (see
+   useLongPress.js/useTouchReorder usage across BeatCard, Column,
+   ProjectSwitcher, FileTree) -- without this, holding a finger on one of
+   these fights the native UI for the same gesture. Scoped to .touch-platform
+   only (see main.jsx) and to specific rows/handles, not applied globally --
+   e.g. never touches the contentEditable title/description fields
+   themselves, which still need their own normal text selection to work. */
+.touch-platform .beat-card,
+.touch-platform .board-col-head,
+.touch-platform .folder-row,
+.touch-platform .file,
+.touch-platform .project-trigger,
+.touch-platform .project-item {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Larger tap targets on touch (Apple HIG recommends ~44pt minimum) -- the
+   desktop sizing (e.g. 22px icon buttons meant for a precise mouse cursor)
+   is too small to reliably hit with a fingertip. Beat-card icons/handle are
+   deliberately NOT enlarged this way (reverted -- see below); this still
+   applies to the sidebar's own small buttons. */
+.touch-platform .folder-add,
+.touch-platform .files-h-add,
+.touch-platform .collapse-btn {
+  min-width: 38px; min-height: 38px;
+}
+/* Beat-card icons/handle: back to desktop sizing (22px / 28px respectively)
+   -- the 38px enlargement above looked comically oversized on the card
+   itself, so this reverts it there specifically rather than trying to
+   split the difference. Nudged a couple px closer to the corner (6px
+   inset instead of 8px) at the same time, since a smaller icon at the old
+   8px inset read as floating with too much surrounding space rather than
+   sitting snugly in the corner the way desktop's icons do. */
+.touch-platform .beat-card-actions { top: 6px; right: 6px; }
+.touch-platform .touch-drag-handle-top-left { top: 6px; left: 6px; }
+/* .touch-drag-handle-top-left is 28px tall (the handle's own base size,
+   unlike the reverted 22px icon buttons) -- still needs *some* top
+   clearance so it doesn't crowd the scene tag/title beneath it, just far
+   less than the 50px the 38px version needed. */
+.touch-platform .beat-card { padding-top: 40px; }

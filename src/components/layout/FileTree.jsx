@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import { titleFromMarkdown } from '../../utils/markdown.js';
+import { useLongPress } from '../../utils/useLongPress.js';
+import { useLongPressOrDrag } from '../../utils/useLongPressOrDrag.js';
 
 function DocFolder({
   docType,
@@ -10,15 +12,31 @@ function DocFolder({
   onAdd,
   onFileClick,
   onFileContextMenu,
+  onFileLongPress,
   onDragStart,
   onDragEnd,
   onContextMenu,
+  onLongPress,
+  onTouchDragMove,
+  onTouchDrop,
 }) {
   const [open, setOpen] = useState(true);
+  // No dedicated drag handle here (contrast BeatCard.jsx) -- a folder row
+  // holding still for the full long-press duration before any movement is
+  // what arms a drag, so a normal scroll swipe (which starts moving almost
+  // immediately) never gets hijacked. See useLongPressOrDrag.js.
+  const rowRef = useLongPressOrDrag({
+    onLongPress: (x, y) => onLongPress(x, y, docType),
+    onDragStart: () => onDragStart(),
+    onDragMove: onTouchDragMove,
+    onDrop: onTouchDrop,
+  });
+
   return (
     <>
       {showIndicatorBefore && <div className="drop-indicator" />}
       <div
+        ref={rowRef}
         className={`folder-row${isDragging ? ' dragging' : ''}`}
         draggable
         data-doctype-id={docType.id}
@@ -39,14 +57,14 @@ function DocFolder({
           {docType.docs.map((doc) => {
             const title = titleFromMarkdown(doc.content, 'Untitled');
             return (
-              <button
+              <FileRow
                 key={doc.id}
-                className={`file${activeDocId === doc.id ? ' active' : ''}`}
+                active={activeDocId === doc.id}
+                title={title}
                 onClick={() => onFileClick(docType.id, doc.id)}
                 onContextMenu={(e) => onFileContextMenu(e, docType.id, doc.id, title)}
-              >
-                {title}
-              </button>
+                onLongPress={(x, y) => onFileLongPress(x, y, docType.id, doc.id, title)}
+              />
             );
           })}
           {docType.docs.length === 0 && (
@@ -57,6 +75,23 @@ function DocFolder({
         </div>
       )}
     </>
+  );
+}
+
+function FileRow({ active, title, onClick, onContextMenu, onLongPress }) {
+  const longPress = useLongPress(onLongPress);
+  return (
+    <button
+      className={`file${active ? ' active' : ''}`}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      onTouchStart={longPress.onTouchStart}
+      onTouchMove={longPress.onTouchMove}
+      onTouchEnd={longPress.onTouchEnd}
+      onTouchCancel={longPress.onTouchCancel}
+    >
+      {title}
+    </button>
   );
 }
 
@@ -88,9 +123,17 @@ export default function FileTree() {
     openFileMenu(docTypeId, docId, e.clientX, e.clientY, title);
   }
 
+  function handleFileLongPress(x, y, docTypeId, docId, title) {
+    openFileMenu(docTypeId, docId, x, y, title);
+  }
+
   function handleDocTypeContextMenu(e, docType) {
     e.preventDefault();
     openDocTypeMenu(docType.id, docType.pluralLabel, e.clientX, e.clientY);
+  }
+
+  function handleDocTypeLongPress(x, y, docType) {
+    openDocTypeMenu(docType.id, docType.pluralLabel, x, y);
   }
 
   // Only the custom doc-type folders reorder -- Outline/Beats, Title Page,
@@ -119,6 +162,38 @@ export default function FileTree() {
   function handleDrop(e) {
     e.preventDefault();
     dropDocType();
+  }
+
+  // Touch equivalent of handleDragOver/handleDrop above -- same underlying
+  // updateDocTypeDropPreview/dropDocType calls, driven by manually
+  // hit-testing document.elementFromPoint(x, y) instead of relying on
+  // native dragover targeting, which touch doesn't have. docTypeDrag itself
+  // is set by the drag handle's onDragStart (useTouchDragHandle), so by the
+  // time this fires it's already the same shared state the mouse path uses.
+  function handleTouchDragMove(x, y) {
+    if (!docTypeDrag) return;
+    const el = document.elementFromPoint(x, y);
+    const container = el?.closest('.doctype-list');
+    if (!container) return;
+    const rows = [...container.querySelectorAll('.folder-row')].filter(
+      (rowEl) => rowEl.dataset.doctypeId !== docTypeDrag.docTypeId
+    );
+    let beforeDocTypeId = null;
+    let closestOffset = -Infinity;
+    rows.forEach((rowEl) => {
+      const box = rowEl.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closestOffset) {
+        closestOffset = offset;
+        beforeDocTypeId = rowEl.dataset.doctypeId;
+      }
+    });
+    updateDocTypeDropPreview(beforeDocTypeId);
+  }
+
+  function handleTouchDrop() {
+    dropDocType();
+    endDocTypeDrag();
   }
 
   const showIndicatorAt = docTypeDropPreview?.beforeDocTypeId;
@@ -154,7 +229,7 @@ export default function FileTree() {
         Screenplay
       </button>
 
-      <div onDragOver={handleDragOver} onDrop={handleDrop}>
+      <div className="doctype-list" onDragOver={handleDragOver} onDrop={handleDrop}>
         {project.docTypes.map((docType) => (
           <DocFolder
             key={docType.id}
@@ -165,9 +240,13 @@ export default function FileTree() {
             onAdd={() => addDoc(docType.id)}
             onFileClick={handleFileClick}
             onFileContextMenu={handleFileContextMenu}
+            onFileLongPress={handleFileLongPress}
             onDragStart={() => beginDocTypeDrag(docType.id)}
             onDragEnd={endDocTypeDrag}
             onContextMenu={(e) => handleDocTypeContextMenu(e, docType)}
+            onLongPress={handleDocTypeLongPress}
+            onTouchDragMove={handleTouchDragMove}
+            onTouchDrop={handleTouchDrop}
           />
         ))}
         {showIndicatorAt === null && docTypeDrag && <div className="drop-indicator" />}

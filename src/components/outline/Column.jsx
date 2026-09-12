@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import BeatCard from './BeatCard.jsx';
+import { useLongPress } from '../../utils/useLongPress.js';
 
 export default function Column({ act, sceneNumbers }) {
   const { dragState, dropPreview, updateDropPreview, dropCard, renameAct, addCard, openActMenu } = useProject();
@@ -57,11 +58,24 @@ export default function Column({ act, sceneNumbers }) {
     openActMenu(act.id, act.title, e.clientX, e.clientY);
   }
 
+  const longPress = useLongPress((x, y) => {
+    if (editingTitle) return;
+    openActMenu(act.id, act.title, x, y);
+  });
+
   const showIndicatorAt = dropPreview?.actId === act.id ? dropPreview.beforeCardId : undefined;
 
   return (
     <div className="board-col" data-act-id={act.id}>
-      <div className="board-col-head" onContextMenu={handleHeadContextMenu} onMouseDown={blockRightClickFocus}>
+      <div
+        className="board-col-head"
+        onContextMenu={handleHeadContextMenu}
+        onMouseDown={blockRightClickFocus}
+        onTouchStart={longPress.onTouchStart}
+        onTouchMove={longPress.onTouchMove}
+        onTouchEnd={longPress.onTouchEnd}
+        onTouchCancel={longPress.onTouchCancel}
+      >
         <span
           className="board-col-title"
           contentEditable

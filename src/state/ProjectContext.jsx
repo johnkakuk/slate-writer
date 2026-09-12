@@ -1,16 +1,33 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createSampleProject, createEmptyProject, defaultTitlePage, defaultDocTypes } from './sampleData.js';
 import { DEFAULT_FONT_ID, FONT_BY_ID, fontStack } from './fontOptions.js';
 import { generateId } from '../utils/id.js';
 import { duplicateMarkdown } from '../utils/markdown.js';
 import { emptyDoc, extractSceneRange } from '../editor/docJson.js';
+import { loadNativeState, saveNativeState } from './nativeSqliteStorage.js';
+import {
+  isICloudSyncAvailable,
+  getICloudFolder,
+  pickICloudFolder as pickICloudFolderRaw,
+  disconnectICloudFolder as disconnectICloudFolderRaw,
+  listSyncedProjects,
+  readSyncedProject,
+  deleteSyncedProject,
+  subscribeToICloudChanges,
+  writeProjectDebounced,
+  hasPendingWrite,
+} from './iCloudSync.js';
 
 const STORAGE_KEY = 'slate-writer-state';
 
 // Under Electron, `window.slateStorage` (see electron/preload.cjs) backs
 // this with a real SQLite file instead of localStorage -- see
-// electron/main.cjs for why. The web build (and the Capacitor iOS build)
-// has no such bridge, so it keeps using localStorage directly.
+// electron/main.cjs for why. The Capacitor iOS build gets the same
+// durability via a different mechanism (nativeSqliteStorage.js), but that
+// plugin bridge is async-only, so it can't be read synchronously here the
+// way the other two platforms can -- see ProjectProvider's native bootstrap
+// effect below instead. This function is only ever called on web/Electron.
 function loadPersisted() {
   try {
     if (window.slateStorage) {
@@ -34,8 +51,15 @@ function loadPersisted() {
   }
 }
 
+// Fire-and-forget on every platform -- none of the three storage backends
+// need the caller to wait (SQLite writes here are just as async as
+// Electron's IPC `send`/localStorage's synchronous write is fast enough not
+// to matter), and blocking the UI thread on every autosave for a slow disk
+// write would be worse than the small risk of a write racing app teardown.
 function savePersisted(json) {
-  if (window.slateStorage) {
+  if (Capacitor.isNativePlatform()) {
+    saveNativeState(json).catch((err) => console.error('Failed to save to native SQLite storage', err));
+  } else if (window.slateStorage) {
     window.slateStorage.save(json);
   } else {
     localStorage.setItem(STORAGE_KEY, json);
@@ -109,6 +133,15 @@ function migrateSingularLabels(p) {
   };
 }
 
+// The full migration pipeline, composed once so it can be reused both for
+// projects restored from local storage (below) and for a project JSON
+// imported from an iCloud-synced file -- the latter needs to be just as
+// forward-compatible as anything loaded locally, since it could easily
+// have been written by an older build on the other device.
+function migrateProject(p) {
+  return migrateSingularLabels(migrateDocTypes(migrateTitlePage(migrateProjectToPerCardDocs(p))));
+}
+
 // Builds the initial `projects` map from whatever was persisted, migrating
 // the pre-multi-project shape (a single `project`) if that's what's there,
 // or seeding a fresh install with one real project plus empty-template
@@ -117,30 +150,19 @@ function migrateSingularLabels(p) {
 // which is a no-op for anything already in the current shape.
 function buildInitialProjects(persisted) {
   if (persisted?.projects && typeof persisted.projects === 'object') {
-    return Object.fromEntries(
-      Object.entries(persisted.projects).map(([id, p]) => [
-        id,
-        migrateSingularLabels(migrateDocTypes(migrateTitlePage(migrateProjectToPerCardDocs(p)))),
-      ])
-    );
+    return Object.fromEntries(Object.entries(persisted.projects).map(([id, p]) => [id, migrateProject(p)]));
   }
   if (persisted?.project) {
     const legacy = persisted.project;
     const id = legacy.id ?? generateId('project');
     return {
-      [id]: migrateSingularLabels(
-        migrateDocTypes(
-          migrateTitlePage(
-            migrateProjectToPerCardDocs({
-              ...legacy,
-              id,
-              screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
-              characterBible: legacy.characterBible ?? [],
-              notesResearch: legacy.notesResearch ?? [],
-            })
-          )
-        )
-      ),
+      [id]: migrateProject({
+        ...legacy,
+        id,
+        screenplayDoc: legacy.screenplayDoc ?? emptyDoc(),
+        characterBible: legacy.characterBible ?? [],
+        notesResearch: legacy.notesResearch ?? [],
+      }),
     };
   }
   const sample = createSampleProject();
@@ -153,8 +175,17 @@ export function ProjectProvider({ children }) {
   // Read persisted state synchronously into each piece of state's lazy
   // initializer (rather than restoring it later in a useEffect) so the very
   // first render already reflects it — see the autosave effect below for
-  // why doing this later caused a revert-on-reload bug.
-  const [persisted] = useState(() => loadPersisted());
+  // why doing this later caused a revert-on-reload bug. That's only
+  // possible on web/Electron, where the storage read itself is synchronous;
+  // Capacitor's native plugin bridge has no synchronous equivalent, so on
+  // iOS `persisted` starts null (the same shape as "nothing saved yet," on
+  // any platform) and gets hydrated for real by the bootstrap effect below,
+  // which also gates `ready` to stop the autosave effect from firing (and
+  // overwriting real data with these placeholder defaults) before that
+  // hydration lands.
+  const isNative = Capacitor.isNativePlatform();
+  const [persisted] = useState(() => (isNative ? null : loadPersisted()));
+  const [ready, setReady] = useState(() => !isNative);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     typeof persisted?.sidebarCollapsed === 'boolean' ? persisted.sidebarCollapsed : false
@@ -165,6 +196,13 @@ export function ProjectProvider({ children }) {
     FONT_BY_ID[persisted?.scriptFontId] ? persisted.scriptFontId : DEFAULT_FONT_ID
   );
   const [typewriterMode, setTypewriterMode] = useState(() => persisted?.typewriterMode === true);
+  const VALID_HIGHLIGHT_STYLES = ['paragraph', 'line', 'underline', 'none'];
+  const [typewriterHighlightStyle, setTypewriterHighlightStyle] = useState(() =>
+    VALID_HIGHLIGHT_STYLES.includes(persisted?.typewriterHighlightStyle) ? persisted.typewriterHighlightStyle : 'paragraph'
+  );
+  // Defaults on -- the point is getting out of the writer's way, so it
+  // should already be doing that the first time they type "(".
+  const [autoParenthetical, setAutoParenthetical] = useState(() => persisted?.autoParenthetical !== false);
   // Where the active line sticks, as a fraction of the Editor's viewport
   // height (0 = top, 1 = bottom) -- deliberately NOT persisted to disk like
   // the mode toggle itself. It's meant to be "wherever you last scrolled it
@@ -180,6 +218,14 @@ export function ProjectProvider({ children }) {
     return Object.keys(projects)[0];
   });
   const [lastSavedAt, setLastSavedAt] = useState(() => persisted?.lastSavedAt ?? null);
+  // The folder (if any) projects are mirrored into for iCloud sync -- see
+  // iCloudSync.js. Not itself persisted here; electron/main.cjs remembers
+  // it across launches and hands it back via getICloudFolder() on mount.
+  const [iCloudFolder, setICloudFolder] = useState(null);
+  // Kept in sync via an effect below so the async reconcile/import
+  // functions (which can't just close over `projects` from render, since
+  // they run later, after external events) always read the current value.
+  const projectsRef = useRef(projects);
   const [view, setView] = useState({ name: 'outline', payload: null });
   const [dragState, setDragState] = useState(null); // { cardId, fromActId }
   const [dropPreview, setDropPreview] = useState(null); // { actId, beforeCardId }
@@ -199,6 +245,54 @@ export function ProjectProvider({ children }) {
   const [toast, setToast] = useState(null); // { message, key }
 
   const project = projects[currentProjectId];
+
+  // Native-only: the synchronous initializers above all ran against
+  // `persisted = null`, i.e. exactly what a fresh install renders on any
+  // platform (sample project, defaults for everything else) -- correct
+  // as a placeholder, but wrong if this device actually has real saved
+  // data, which the synchronous read couldn't check. This loads it for
+  // real and overwrites those placeholders in one shot once it lands, then
+  // flips `ready`, which un-gates the autosave effect below. A failed read
+  // (plugin error, corrupt row) degrades to treating this as a fresh
+  // install rather than getting stuck on the loading screen forever.
+  useEffect(() => {
+    if (!isNative) return undefined;
+    let cancelled = false;
+    (async () => {
+      let data = null;
+      try {
+        const raw = await loadNativeState();
+        data = raw ? JSON.parse(raw) : null;
+      } catch (err) {
+        console.error('Failed to load native SQLite storage', err);
+      }
+      if (cancelled) return;
+      if (data) {
+        setSidebarCollapsed(typeof data.sidebarCollapsed === 'boolean' ? data.sidebarCollapsed : false);
+        setTheme(data.theme === 'light' ? 'light' : 'dark');
+        setFontId(FONT_BY_ID[data.fontId] ? data.fontId : DEFAULT_FONT_ID);
+        setScriptFontId(FONT_BY_ID[data.scriptFontId] ? data.scriptFontId : DEFAULT_FONT_ID);
+        setTypewriterMode(data.typewriterMode === true);
+        setTypewriterHighlightStyle(
+          VALID_HIGHLIGHT_STYLES.includes(data.typewriterHighlightStyle) ? data.typewriterHighlightStyle : 'paragraph'
+        );
+        setAutoParenthetical(data.autoParenthetical !== false);
+        const builtProjects = buildInitialProjects(data);
+        setProjects(builtProjects);
+        setCurrentProjectId(
+          data.currentProjectId && builtProjects[data.currentProjectId]
+            ? data.currentProjectId
+            : Object.keys(builtProjects)[0]
+        );
+        setLastSavedAt(data.lastSavedAt ?? null);
+      }
+      setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Reflect the theme on the document root so the CSS `[data-theme]` tokens
   // apply everywhere, not just inside the React tree.
@@ -222,8 +316,13 @@ export function ProjectProvider({ children }) {
   }, [scriptFontId]);
 
   // Persist whenever any project, the active project, sidebar, theme, or
-  // font state changes (autosave).
+  // font state changes (autosave). Gated on `ready` so that on native, the
+  // placeholder defaults the synchronous initializers rendered before the
+  // real async load landed can never get written out and clobber the
+  // actual saved data -- the exact bug the comment on `persisted` above
+  // warns about, which this dodges by simply not persisting anything yet.
   useEffect(() => {
+    if (!ready) return;
     const savedAt = Date.now();
     setLastSavedAt(savedAt);
     try {
@@ -236,6 +335,8 @@ export function ProjectProvider({ children }) {
           fontId,
           scriptFontId,
           typewriterMode,
+          typewriterHighlightStyle,
+          autoParenthetical,
           lastSavedAt: savedAt,
         })
       );
@@ -243,7 +344,18 @@ export function ProjectProvider({ children }) {
       // Storage unavailable (private mode, quota, etc.) — skip persistence silently.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects, currentProjectId, sidebarCollapsed, theme, fontId, scriptFontId, typewriterMode]);
+  }, [
+    projects,
+    currentProjectId,
+    sidebarCollapsed,
+    theme,
+    fontId,
+    scriptFontId,
+    typewriterMode,
+    typewriterHighlightStyle,
+    autoParenthetical,
+    ready,
+  ]);
 
   const showToast = useCallback((message) => {
     setToast({ message, key: Date.now() });
@@ -254,6 +366,116 @@ export function ProjectProvider({ children }) {
     const timer = setTimeout(() => setToast(null), 1800);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+
+  // Pulls one project in from its synced file, if there's actually
+  // anything to pull. Three separate escape hatches, each covering a
+  // different way this could otherwise go wrong:
+  //  - a pending debounced write means *this* device edited the project
+  //    seconds ago and hasn't sent that edit out yet -- importing now
+  //    would clobber it with an older version.
+  //  - byte-identical content means this is almost certainly our own
+  //    write echoing back (the fs watcher's dedup in main.cjs should
+  //    already filter these out, but content equality is a cheap, robust
+  //    second check that doesn't depend on timing).
+  //  - a missing/corrupt file just no-ops rather than erroring.
+  // Reused for both the initial reconcile-on-connect pass (showNotice:
+  // false -- restoring from iCloud on a fresh device is expected, not a
+  // surprise) and live updates while the app stays open (showNotice: true).
+  const importFromICloud = useCallback(
+    async (id, { showNotice = false } = {}) => {
+      if (hasPendingWrite(id)) return;
+      const raw = await readSyncedProject(id);
+      if (!raw) return;
+      const localProject = projectsRef.current[id];
+      if (localProject && JSON.stringify(localProject) === raw) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const migrated = migrateProject({ ...parsed, id });
+      setProjects((prev) => ({ ...prev, [id]: migrated }));
+      if (showNotice) showToast(`“${migrated.name}” updated from iCloud`);
+    },
+    [showToast]
+  );
+
+  const pickICloudFolder = useCallback(async () => {
+    const folder = await pickICloudFolderRaw();
+    setICloudFolder(folder);
+  }, []);
+
+  const disconnectICloudFolder = useCallback(async () => {
+    await disconnectICloudFolderRaw();
+    setICloudFolder(null);
+  }, []);
+
+  // On mount (and whenever a folder is newly picked), pull in whatever's
+  // already sitting in the synced folder -- covers changes made on the
+  // other device while this one was closed, which the live watcher below
+  // can't have seen.
+  useEffect(() => {
+    if (!isICloudSyncAvailable() || !ready) return;
+    let cancelled = false;
+    (async () => {
+      const folder = await getICloudFolder();
+      if (cancelled) return;
+      setICloudFolder(folder);
+      if (!folder) return;
+      const entries = await listSyncedProjects();
+      if (cancelled) return;
+      for (const { id } of entries) {
+        // eslint-disable-next-line no-await-in-loop -- one project at a
+        // time keeps this readable; the list is small and this only runs
+        // once per connect, not per keystroke.
+        await importFromICloud(id, { showNotice: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Live updates while the app stays open -- the other device (or this
+  // one, from outside the app entirely) changed a project file, and
+  // main.cjs's folder watcher noticed. Subscribes once; importFromICloud
+  // itself always reads the current folder/project state via refs, so a
+  // stale closure here isn't a concern.
+  useEffect(() => {
+    if (!isICloudSyncAvailable()) return undefined;
+    return subscribeToICloudChanges(({ id }) => {
+      importFromICloud(id, { showNotice: true });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirrors local edits out to the synced folder -- diffs `projects` by
+  // per-key object identity against the previous render (cheap and exact,
+  // since every mutation path in this file replaces just the entries it
+  // touched rather than the whole map) so only projects that actually
+  // changed get a debounced write scheduled, and a project that
+  // disappeared (deleted locally) gets its synced file removed too.
+  const prevProjectsForSyncRef = useRef(projects);
+  useEffect(() => {
+    if (!ready || !iCloudFolder) {
+      prevProjectsForSyncRef.current = projects;
+      return;
+    }
+    const prev = prevProjectsForSyncRef.current;
+    for (const [id, p] of Object.entries(projects)) {
+      if (prev[id] !== p) writeProjectDebounced(id, JSON.stringify(p));
+    }
+    for (const id of Object.keys(prev)) {
+      if (!(id in projects)) deleteSyncedProject(id);
+    }
+    prevProjectsForSyncRef.current = projects;
+  }, [projects, ready, iCloudFolder]);
 
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
 
@@ -753,6 +975,10 @@ export function ProjectProvider({ children }) {
       setScriptFontId,
       typewriterMode,
       setTypewriterMode,
+      typewriterHighlightStyle,
+      setTypewriterHighlightStyle,
+      autoParenthetical,
+      setAutoParenthetical,
       typewriterAnchor,
       setTypewriterAnchor,
       project,
@@ -828,6 +1054,10 @@ export function ProjectProvider({ children }) {
       dropDocType,
       toast,
       showToast,
+      iCloudSyncSupported: isICloudSyncAvailable(),
+      iCloudFolder,
+      pickICloudFolder,
+      disconnectICloudFolder,
     }),
     [
       sidebarCollapsed,
@@ -836,6 +1066,8 @@ export function ProjectProvider({ children }) {
       fontId,
       scriptFontId,
       typewriterMode,
+      typewriterHighlightStyle,
+      autoParenthetical,
       typewriterAnchor,
       project,
       projects,
@@ -910,10 +1142,19 @@ export function ProjectProvider({ children }) {
       dropDocType,
       toast,
       showToast,
+      iCloudFolder,
+      pickICloudFolder,
+      disconnectICloudFolder,
     ]
   );
 
-  return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
+  // Only ever briefly true on native (SQLite reads here are fast) -- avoids
+  // a flash of the placeholder sample project before the real data swaps
+  // in, which `ready` alone wouldn't prevent since gating just the autosave
+  // effect still lets the placeholder render.
+  return (
+    <ProjectContext.Provider value={value}>{ready ? children : <div className="app-loading" />}</ProjectContext.Provider>
+  );
 }
 
 export function useProject() {

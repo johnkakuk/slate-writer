@@ -14,7 +14,11 @@ import { findBlockById } from '../../editor/docUtils.js';
 import { emptyDoc } from '../../editor/docJson.js';
 import { fountainPastePlugin } from '../../editor/fountainPastePlugin.js';
 import { pageBreakPlugin, pageBreakKey } from '../../editor/pageBreakPlugin.js';
-import { activeLinePlugin, activeLineKey } from '../../editor/activeLinePlugin.js';
+import { touchCaretPlugin } from '../../editor/touchCaretPlugin.js';
+import { selectionResyncPlugin } from '../../editor/selectionResyncPlugin.js';
+import { activeLinePlugin, activeLineKey, LINE_MEASURE_META } from '../../editor/activeLinePlugin.js';
+import { autoParentheticalPlugin } from '../../editor/autoParentheticalPlugin.js';
+import { getRecentCharacterNames } from '../../editor/characterNames.js';
 import { computeScriptPagination } from '../../export/paginate.js';
 
 // Arriving here from a Screenplay-view line click always centers that line
@@ -40,6 +44,8 @@ export default function Editor() {
     navigate,
     updateCardSceneDoc,
     typewriterMode,
+    typewriterHighlightStyle,
+    autoParenthetical,
     typewriterAnchor,
     setTypewriterAnchor,
   } = useProject();
@@ -76,10 +82,31 @@ export default function Editor() {
   // would tear down and recreate the whole ProseMirror view) -- same
   // pattern as initialDocRef/initialTargetRef.
   const typewriterModeRef = useRef(typewriterMode);
+  const typewriterHighlightStyleRef = useRef(typewriterHighlightStyle);
+  const autoParentheticalRef = useRef(autoParenthetical);
   const typewriterAnchorRef = useRef(typewriterAnchor);
+  // Recomputed whenever the project changes (cheap: plain text scanning, no
+  // layout/measurement work, so unlike pagination this doesn't need
+  // debouncing) rather than once at mount -- Tab should see a
+  // just-introduced character's name on the very next block, not only
+  // after reopening the Editor.
+  const recentCharacterNamesRef = useRef(getRecentCharacterNames(project));
+  useEffect(() => {
+    // Exclude whatever block the caret is in right now -- if it's a
+    // Character block, its text is still being typed (see
+    // characterNames.js) and shouldn't count as a used name yet.
+    const caretBlockId = viewRef.current?.state.selection.$from.parent.attrs?.id ?? null;
+    recentCharacterNamesRef.current = getRecentCharacterNames(project, 5, caretBlockId);
+  }, [project]);
   useEffect(() => {
     typewriterModeRef.current = typewriterMode;
   }, [typewriterMode]);
+  useEffect(() => {
+    autoParentheticalRef.current = autoParenthetical;
+  }, [autoParenthetical]);
+  useEffect(() => {
+    typewriterHighlightStyleRef.current = typewriterHighlightStyle;
+  }, [typewriterHighlightStyle]);
   useEffect(() => {
     typewriterAnchorRef.current = typewriterAnchor;
   }, [typewriterAnchor]);
@@ -91,6 +118,89 @@ export default function Editor() {
   // immediately feed back in as a (redundant, but not harmless-forever)
   // anchor update.
   const programmaticScrollRef = useRef(false);
+
+  // Defends against ANY scroll drift while a tap's selection change is
+  // being resolved -- not just this component's own scrollToFraction calls,
+  // but also WebKit's own native "scroll the focused/selected point into
+  // view" behavior, which fires independently of anything dispatched
+  // through ProseMirror. Tapping a line is only supposed to move which
+  // line is active, never the scroll position itself.
+  //
+  // Two things turned out NOT to reliably distinguish a tap from the start
+  // of a scroll-drag gesture, both tried and both wrong:
+  //   - Locking from a raw touchstart/mousedown: touching the editor is
+  //     also how a drag starts, so every native momentum-scroll frame
+  //     during a real drag got fought and snapped back (visible flashing),
+  //     then jumped once the lock let go.
+  //   - Gating on PM's "pointer" selection-change meta instead: PM resolves
+  //     (tentatively places the caret for) a touch as soon as it starts,
+  //     before it's clear the gesture will turn into a drag -- so this
+  //     transaction fires at touchstart-time regardless, same problem.
+  // What actually distinguishes them is *movement*: a drag moves the touch
+  // point meaningfully before release, a tap doesn't. touchMovedRef below
+  // tracks that (see the touchstart/touchmove listeners in the mount
+  // effect) and gates the lock on it not having happened yet.
+  const pointerScrollLockRef = useRef(null);
+  const pointerScrollLockTimerRef = useRef(null);
+  const touchMovedRef = useRef(false);
+  const touchStartYRef = useRef(null);
+
+  function lockScrollAgainstPointer(scrollEl) {
+    if (!scrollEl || touchMovedRef.current) return;
+    // Only capture scrollTop as the baseline on the FIRST pointer-tagged
+    // transaction of a gesture, not every one. A single physical tap can
+    // produce more than one of these -- touchCaretPlugin's own correction,
+    // plus (confirmed via Simulator instrumentation) a late, spurious
+    // native selection re-resolution that briefly lands on the wrong
+    // block. If a re-lock re-captured scrollTop each time, the second call
+    // would "lock in" whatever the native drift had already nudged the
+    // scroll to, instead of the true pre-tap position -- reasserting an
+    // already-wrong value rather than the original. Only the timer refresh
+    // (extending how long the existing baseline is defended) should repeat.
+    if (pointerScrollLockRef.current == null) {
+      pointerScrollLockRef.current = scrollEl.scrollTop;
+    }
+    clearTimeout(pointerScrollLockTimerRef.current);
+    pointerScrollLockTimerRef.current = setTimeout(() => {
+      pointerScrollLockRef.current = null;
+    }, 500);
+  }
+
+  // Forces scrollTop back to the locked value, if it's drifted -- called
+  // right after a pointer-tagged transaction settles, and again a couple of
+  // frames later to also catch autoscroll that lands after layout settles
+  // (the same class of timing WebKit needs for touchCaretPlugin's own
+  // correction).
+  function reassertScrollLock(scrollEl) {
+    if (pointerScrollLockRef.current == null || !scrollEl || touchMovedRef.current) return;
+    const locked = pointerScrollLockRef.current;
+    if (scrollEl.scrollTop !== locked) {
+      programmaticScrollRef.current = true;
+      scrollEl.scrollTop = locked;
+    }
+  }
+
+  // A touch that moves more than this many px vertically before release
+  // reads as the start of a scroll-drag, not a tap -- releases the lock
+  // immediately (mid-gesture, not just gating future locks) so the drag's
+  // own native/manual scrolling is free to proceed uncontested.
+  const TAP_MOVE_THRESHOLD = 10;
+
+  function handleTouchStart(event) {
+    touchMovedRef.current = false;
+    touchStartYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleTouchMove(event) {
+    if (touchStartYRef.current == null || touchMovedRef.current) return;
+    const y = event.touches[0]?.clientY;
+    if (typeof y !== 'number') return;
+    if (Math.abs(y - touchStartYRef.current) > TAP_MOVE_THRESHOLD) {
+      touchMovedRef.current = true;
+      pointerScrollLockRef.current = null;
+      clearTimeout(pointerScrollLockTimerRef.current);
+    }
+  }
 
   // Scrolls so the current selection lands at a given fractional position
   // down the .editor-scroll viewport (0 = top, 1 = bottom). Used two ways:
@@ -136,14 +246,17 @@ export default function Editor() {
     const state = EditorState.create({
       doc: Node.fromJSON(schema, initialDocRef.current),
       plugins: [
+        selectionResyncPlugin(),
         slashMenuPlugin(),
-        editorKeymap(),
+        editorKeymap(() => recentCharacterNamesRef.current),
         history(),
         autoCapsPlugin(),
         placeholderPlugin(),
         fountainPastePlugin(),
         pageBreakPlugin(),
         activeLinePlugin(),
+        touchCaretPlugin(),
+        autoParentheticalPlugin(autoParentheticalRef),
       ],
     });
 
@@ -167,18 +280,80 @@ export default function Editor() {
         // look -- forcibly scrolling their choice to the anchor would fight
         // the click itself. The sticky line should go meet them there
         // instead, same as it does for a manual scroll.
-        if (typewriterModeRef.current) {
+        // activeLinePlugin's own 'line'-mode measurement self-dispatch
+        // (see LINE_MEASURE_META) is bookkeeping reacting to whatever the
+        // previous transaction already was -- not a new user interaction --
+        // so it must never reach the pointer/scrollToFraction split below.
+        // Left in, it fell into the scrollToFraction branch (untagged, so
+        // neither "pointer" nor a real edit) and forcibly re-scrolled back
+        // to the OLD anchor one transaction after every tap, undoing the
+        // tap's own correct no-scroll handling and sometimes leaving the
+        // highlight on the wrong line.
+        //
+        // Both branches below defer their actual measurement (coordsAtPos/
+        // getBoundingClientRect, both layout-forcing) to the next animation
+        // frame rather than doing it synchronously right here. This isn't
+        // just a perf nicety: Home/End/arrow-key caret moves aren't bound in
+        // our keymap, so the browser moves the native caret on its own and
+        // ProseMirror resyncs its own state.selection from that
+        // *asynchronously* afterward. Forcing a synchronous layout inside
+        // dispatchTransaction on every single keystroke ate into the time
+        // available for that pending resync to land before the next
+        // keystroke's own dispatch -- e.g. End then Enter in quick
+        // succession -- so Enter could fire while PM's selection was still
+        // stale from *before* End moved the caret, splitting the wrong
+        // block entirely. Confirmed via a repro: with the sync measurement
+        // in place, End immediately after a click intermittently left a
+        // totally different (and completely wrong) block split into two;
+        // deferring it stopped the corruption outright in the same repro
+        // run many times over. This -- not any single-plugin bug -- is also
+        // the likely explanation for the "ghost autocomplete sometimes
+        // doesn't show" and "caret visually one line off from the active
+        // line indicator, self-corrects on next keystroke" reports: both
+        // are exactly what stale-selection-for-one-tick looks like
+        // elsewhere in the editor.
+        if (typewriterModeRef.current && !tr.getMeta(LINE_MEASURE_META)) {
           if (tr.getMeta('pointer')) {
-            adoptCurrentFractionAsAnchor(editorView);
+            // A real click/tap-driven selection change, per PM's own
+            // "pointer" tag -- as opposed to a scroll/drag gesture, which
+            // never produces one of these (dragging just scrolls the
+            // container; it doesn't change the selection). Lock the
+            // *current* scrollTop as the baseline to defend for a short
+            // window, covering this transaction, touchCaretPlugin's
+            // next-frame correction of the same tap (which dispatches its
+            // own follow-up "pointer" transaction), and a couple of settle
+            // frames after for native autoscroll-on-focus that lands late.
+            // lockScrollAgainstPointer itself stays synchronous -- it only
+            // reads scrollTop (cheap, not layout-forcing the way
+            // coordsAtPos/getBoundingClientRect are), and needs to capture
+            // that baseline *before* anything else has a chance to move it.
+            const scrollEl = mountRef.current?.closest('.editor-scroll');
+            lockScrollAgainstPointer(scrollEl);
+            requestAnimationFrame(() => {
+              if (viewRef.current !== editorView) return;
+              adoptCurrentFractionAsAnchor(editorView);
+              reassertScrollLock(scrollEl);
+              requestAnimationFrame(() => reassertScrollLock(scrollEl));
+            });
           } else {
-            scrollToFraction(editorView, typewriterAnchorRef.current);
+            requestAnimationFrame(() => {
+              if (viewRef.current !== editorView) return;
+              scrollToFraction(editorView, typewriterAnchorRef.current);
+            });
           }
         }
       },
     });
     viewRef.current = editorView;
+    editorView.dom.addEventListener('touchstart', handleTouchStart, { passive: true });
+    editorView.dom.addEventListener('touchmove', handleTouchMove, { passive: true });
     setSlashState(slashMenuKey.getState(editorView.state));
-    editorView.dispatch(editorView.state.tr.setMeta(activeLineKey, typewriterModeRef.current));
+    editorView.dispatch(
+      editorView.state.tr.setMeta(activeLineKey, {
+        enabled: typewriterModeRef.current,
+        style: typewriterHighlightStyleRef.current,
+      })
+    );
 
     // Only a click on a specific Screenplay-view line carries a blockId to
     // scroll to a precise spot within the scene; opening from a beat card
@@ -224,6 +399,9 @@ export default function Editor() {
     editorView.focus();
 
     return () => {
+      editorView.dom.removeEventListener('touchstart', handleTouchStart);
+      editorView.dom.removeEventListener('touchmove', handleTouchMove);
+      clearTimeout(pointerScrollLockTimerRef.current);
       editorView.destroy();
       viewRef.current = null;
     };
@@ -269,18 +447,21 @@ export default function Editor() {
     return () => clearTimeout(timer);
   }, [project, card]);
 
-  // Handles toggling Typewriter Mode on/off *while this card is already
-  // open* (the mount effect above only covers arriving with it already on).
-  // Flips the active-line highlight and, if it just turned on, immediately
-  // snaps the current caret to the anchor rather than waiting for the next
-  // edit or scroll to trigger a correction.
+  // Handles toggling Typewriter Mode on/off, and changing its highlight
+  // style, *while this card is already open* (the mount effect above only
+  // covers arriving with a setting already applied). Flips the active-line
+  // highlight and, if the mode just turned on, immediately snaps the
+  // current caret to the anchor rather than waiting for the next edit or
+  // scroll to trigger a correction.
   useEffect(() => {
     const editorView = viewRef.current;
     if (!editorView) return;
-    editorView.dispatch(editorView.state.tr.setMeta(activeLineKey, typewriterMode));
+    editorView.dispatch(
+      editorView.state.tr.setMeta(activeLineKey, { enabled: typewriterMode, style: typewriterHighlightStyle })
+    );
     if (typewriterMode) scrollToFraction(editorView, typewriterAnchorRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typewriterMode]);
+  }, [typewriterMode, typewriterHighlightStyle]);
 
   // While Typewriter Mode is on, a manual scroll (trackpad/wheel/scrollbar
   // -- anything that isn't this component's own corrective scrollTop writes,
@@ -294,6 +475,13 @@ export default function Editor() {
     function handleScroll() {
       if (programmaticScrollRef.current) {
         programmaticScrollRef.current = false;
+        return;
+      }
+      // A tap/click is still being resolved (see pointerScrollLockRef) --
+      // this drift is native autoscroll-on-focus, not the user manually
+      // scrolling, so snap it back instead of adopting it as a new anchor.
+      if (pointerScrollLockRef.current != null) {
+        reassertScrollLock(scrollEl);
         return;
       }
       if (!typewriterModeRef.current || !viewRef.current) return;
