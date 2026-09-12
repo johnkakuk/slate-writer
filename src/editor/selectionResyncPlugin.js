@@ -1,4 +1,5 @@
 import { Plugin, TextSelection } from 'prosemirror-state';
+import { isTouchPlatform } from '../utils/platform.js';
 
 // ProseMirror does not update state.selection synchronously on mousedown or
 // click -- it relies entirely on the browser's own (asynchronous)
@@ -24,8 +25,27 @@ import { Plugin, TextSelection } from 'prosemirror-state';
 export function selectionResyncPlugin() {
   return new Plugin({
     props: {
-      handleKeyDown(view) {
+      handleKeyDown(view, event) {
         if (!view.hasFocus()) return false;
+        // iOS handles Enter completely differently from every other key: to
+        // avoid confusing the virtual keyboard, ProseMirror never
+        // preventDefaults it and never calls handleKeyDown on the raw
+        // keydown at all (see prosemirror-view's editHandlers.keydown --
+        // gated on an internal `ios` flag Chromium never sets, which is why
+        // none of this was ever reachable while testing there). Instead it
+        // lets the browser's own native "insertParagraph" DOM mutation
+        // happen first, and only calls handleKeyDown afterward, once its
+        // DOM-mutation observer notices a change shaped like what Enter
+        // produces. By the time THIS handler runs for that call, the live
+        // DOM selection reflects a caret WebKit has already placed relative
+        // to content it just split on its own -- reading that and resyncing
+        // state.selection to match, right here, would feed smartEnter
+        // (keymap.js) a position corrupted by native's own not-yet-modeled
+        // edit, not the real pre-Enter caret this resync exists to recover.
+        // Skipping only this one case keeps the desktop fix this plugin
+        // exists for (see the class comment) fully intact -- that repro
+        // never touched iOS's Enter path at all.
+        if (isTouchPlatform() && event.keyCode === 13) return false;
         const domSel = view.domSelectionRange();
         if (!domSel.focusNode || !view.dom.contains(domSel.focusNode)) return false;
         if (!domSel.anchorNode || !view.dom.contains(domSel.anchorNode)) return false;
