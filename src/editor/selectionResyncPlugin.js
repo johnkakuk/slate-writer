@@ -28,15 +28,36 @@ export function selectionResyncPlugin() {
         if (!view.hasFocus()) return false;
         const domSel = view.domSelectionRange();
         if (!domSel.focusNode || !view.dom.contains(domSel.focusNode)) return false;
-        let pos;
+        if (!domSel.anchorNode || !view.dom.contains(domSel.anchorNode)) return false;
+        // Reads BOTH ends of the live DOM selection, not just the caret/focus
+        // end -- an earlier version resolved only the focus point and
+        // rebuilt the selection with TextSelection.near(), which always
+        // produces a *collapsed* cursor selection. That silently collapsed
+        // any active range (e.g. drag-selected text) back to a single point
+        // the instant any key was pressed, before the key's own handler
+        // (Backspace, Delete, typing a replacement character, ...) ever saw
+        // it -- so "select some text, hit Backspace" deleted one character
+        // next to the selection instead of the selection itself.
+        // TextSelection.between($anchor, $head) preserves the full range
+        // and its direction, only ever collapsing when the DOM selection
+        // itself is actually collapsed.
+        let anchorPos, headPos;
         try {
-          pos = view.posAtDOM(domSel.focusNode, domSel.focusOffset);
+          anchorPos = view.posAtDOM(domSel.anchorNode, domSel.anchorOffset);
+          headPos = view.posAtDOM(domSel.focusNode, domSel.focusOffset);
         } catch {
           return false;
         }
-        if (typeof pos !== 'number' || pos < 0) return false;
-        const resolved = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size));
-        const sel = TextSelection.near(resolved);
+        if (typeof anchorPos !== 'number' || typeof headPos !== 'number' || anchorPos < 0 || headPos < 0) return false;
+        const docSize = view.state.doc.content.size;
+        const $anchor = view.state.doc.resolve(Math.min(anchorPos, docSize));
+        const $head = view.state.doc.resolve(Math.min(headPos, docSize));
+        let sel;
+        try {
+          sel = TextSelection.between($anchor, $head);
+        } catch {
+          return false;
+        }
         if (!sel.eq(view.state.selection)) {
           view.dispatch(view.state.tr.setSelection(sel));
         }

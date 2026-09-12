@@ -42,7 +42,14 @@ function cycleCharacterName(getRecentNames) {
     const currentText = node.textContent.trim().toUpperCase();
     if (currentText && !names.includes(currentText)) return false;
     const currentIdx = names.indexOf(currentText);
-    const nextName = names[(currentIdx + 1) % names.length];
+    // Cycles backward through the list on repeat presses (reversed from
+    // the original forward order per explicit request) -- an empty/
+    // not-yet-recognized block (currentIdx -1) still starts at the most
+    // recent name first, same as before; only the *subsequent* step
+    // direction flipped, wrapping from index 0 to the end instead of from
+    // the end back to 0.
+    const nextIdx = currentIdx === -1 ? 0 : (currentIdx - 1 + names.length) % names.length;
+    const nextName = names[nextIdx];
     if (dispatch) {
       const from = $from.before($from.depth) + 1;
       const to = from + node.content.size;

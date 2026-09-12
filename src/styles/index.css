@@ -108,6 +108,15 @@ button {
 .app {
   display: flex;
   height: 100vh;
+  /* 100vh alone left a phantom gap at the bottom of the screen on iOS
+     (Capacitor's WKWebView) roughly the size of the top safe-area inset --
+     100vh doesn't reliably equal the actual visible viewport height inside
+     a WKWebView the way it's assumed to on the web. 100dvh (dynamic
+     viewport height) tracks the real visible area instead; the 100vh
+     above is a fallback for browsers that don't support dvh at all, since
+     an unsupported value is ignored and the next declaration for the same
+     property wins. */
+  height: 100dvh;
   /* Requires the viewport-fit=cover meta tag (see index.html) to be
      non-zero at all -- keeps content clear of the notch/Dynamic Island and
      home indicator on iOS. A no-op everywhere else (env() falls back to 0). */
@@ -125,6 +134,7 @@ button {
    read resolves -- see ProjectContext.jsx's bootstrap effect. */
 .app-loading {
   height: 100vh;
+  height: 100dvh; /* see .app's own comment above */
   background: var(--surface);
 }
 
@@ -824,6 +834,17 @@ button {
   display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;
 }
 .settings-field-hint { font-size: 10px; color: var(--text-dim); margin-top: 6px; }
+
+.settings-icloud-row { display: flex; gap: 8px; margin-top: 10px; }
+.settings-btn {
+  font-size: 11.5px; font-weight: 600; padding: 7px 14px; border-radius: 6px;
+  background: var(--accent); color: var(--accent-ink); border: none;
+}
+.settings-btn-quiet {
+  background: transparent; border: 1px solid var(--border-alt); color: var(--text-muted);
+}
+.settings-btn-quiet:hover { background: var(--surface); color: var(--text); }
+.settings-icloud-status { font-family: ui-monospace, monospace; word-break: break-all; }
 
 .font-select { position: relative; width: 100%; max-width: 320px; }
 .font-select-trigger {
