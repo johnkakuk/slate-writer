@@ -125,13 +125,17 @@ function smartEnter(state, dispatch) {
 // ref for the current recently-used-names list (see Editor.jsx) --
 // editorKeymap() itself runs once at mount and never re-runs, same
 // constraint as this editor's other settings-driven plugins.
-export function editorKeymap(getRecentNames) {
+export function editorKeymap(getRecentNames, exitFullscreen) {
   const nameCycle = cycleCharacterName(getRecentNames);
   const reverseNameCycle = cycleCharacterName(getRecentNames, -1);
   const typeCycle = cycleType(1);
   const reverseTypeCycle = cycleType(-1);
   return keymap({
     ...baseKeymap,
+    // The slash-menu plugin runs first; otherwise fullscreen takes priority
+    // over ProseMirror's default Escape command (select the parent node).
+    Escape: (state, dispatch, view) => exitFullscreen?.()
+      || baseKeymap.Escape?.(state, dispatch, view) || false,
     Enter: smartEnter,
     // Cycle through recently-used names on an empty/cycling Character
     // block first, then fall back to the original type-cycle.

@@ -1,3 +1,4 @@
+import SyncSettings from '../../sync/SyncSettings.jsx';
 import React from 'react';
 import { useProject } from '../../state/ProjectContext.jsx';
 import FontSelect from './FontSelect.jsx';
@@ -28,10 +29,6 @@ export default function SettingsView() {
     setTypewriterHighlightStyle,
     autoParenthetical,
     setAutoParenthetical,
-    iCloudSyncSupported,
-    iCloudFolder,
-    pickICloudFolder,
-    disconnectICloudFolder,
   } = useProject();
 
   return (
@@ -137,28 +134,7 @@ export default function SettingsView() {
           </div>
         </div>
 
-        {iCloudSyncSupported && (
-          <div className="settings-section">
-            <div className="settings-section-label">iCloud Sync</div>
-            <div className="settings-field-hint">
-              Mirrors every project to a folder you choose — pick one inside your own iCloud Drive to sync
-              between devices. Changes can take a little while to show up on the other device, same as Finder.
-            </div>
-            <div className="settings-icloud-row">
-              <button className="settings-btn" onClick={pickICloudFolder}>
-                {iCloudFolder ? 'Change Folder…' : 'Choose Folder…'}
-              </button>
-              {iCloudFolder && (
-                <button className="settings-btn settings-btn-quiet" onClick={disconnectICloudFolder}>
-                  Disconnect
-                </button>
-              )}
-            </div>
-            <div className="settings-field-hint settings-icloud-status">
-              {iCloudFolder ? `Synced to: ${iCloudFolder}` : 'Not connected'}
-            </div>
-          </div>
-        )}
+        <SyncSettings />
       </div>
     </div>
   );
