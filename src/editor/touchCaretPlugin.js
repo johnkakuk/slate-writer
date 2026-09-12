@@ -101,20 +101,17 @@ export function touchCaretPlugin() {
         touchend(view, event) {
           if (event.changedTouches.length !== 1) return false;
           const touch = event.changedTouches[0];
-          // Runs the same correction twice: once immediately (synchronous,
-          // same tick as touchend) and once more on the next animation
-          // frame as a backstop. The immediate pass matters on its own,
-          // not just for hiding the jump -- a fast follow-up keystroke
-          // (typing, or Enter to split the line) can fire before a purely
-          // rAF-deferred correction has ever run, so smartEnter/etc. would
-          // still see the stale, uncorrected position. Deferring *only*
-          // to rAF was the original design specifically to avoid racing
-          // native's own (possibly still-settling) touch-driven selection
-          // update; running immediately *in addition* keeps that safety
-          // net while also making the corrected position available right
-          // away for anything that reacts to the very next keydown.
+          // Single deferred pass, same as the original design -- a prior
+          // attempt at also running this synchronously (in addition to the
+          // rAF pass, to close a race with fast follow-up keystrokes)
+          // reused these same touch coordinates for a *second* dispatch,
+          // and each dispatch can trigger its own scroll-into-view side
+          // effects; if the first one shifted the layout at all, the
+          // second recomputed against now-stale coordinates and produced a
+          // visible extra scroll jump on top of the caret correction --
+          // worse than the single small jump this was meant to fix.
+          // Reverted; the caret-hide below still covers this one pass.
           view.dom.classList.add(HIDE_CLASS);
-          correctTouchCaret(view, touch);
           requestAnimationFrame(() => {
             if (view.isDestroyed) return;
             correctTouchCaret(view, touch);
