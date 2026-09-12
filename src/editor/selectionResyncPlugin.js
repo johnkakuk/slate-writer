@@ -1,5 +1,4 @@
 import { Plugin, TextSelection } from 'prosemirror-state';
-import { isTouchPlatform } from '../utils/platform.js';
 
 // ProseMirror does not update state.selection synchronously on mousedown or
 // click -- it relies entirely on the browser's own (asynchronous)
@@ -22,30 +21,58 @@ import { isTouchPlatform } from '../utils/platform.js';
 // -- including our own keymap's Enter binding -- gets a chance to act on
 // the (possibly stale) old value. This sidesteps ProseMirror's own
 // selectionchange-driven timing entirely rather than trying to out-race it.
+//
+// EXCEPT for one specific, confirmed case: WebKit (desktop Safari/WebKit
+// *and* real iOS -- reproduced against Playwright's own WebKit engine with
+// an iPad user agent, not just theorized) handles Enter completely
+// differently from every other key. To avoid confusing the virtual
+// keyboard, ProseMirror never preventDefaults it and never calls
+// handleKeyDown on the raw keydown at all there (see prosemirror-view's
+// editHandlers.keydown, gated on its own internal `ios`-named but
+// WebKit-general flag -- Chromium never sets it, which is why none of this
+// was reachable while testing there). Instead it lets the browser's own
+// native "insertParagraph" DOM mutation happen first -- splitting the
+// block itself, in the DOM, independently of our model -- and only calls
+// handleKeyDown afterward, once its own DOM-mutation observer notices a
+// change shaped like what Enter produces.
+//
+// By the time THIS handler runs for that later call, the live DOM
+// selection points into a brand-new DOM node WebKit's own split just
+// created, one that doesn't correspond to any position in our *current*
+// document model at all (that native split hasn't been reconciled into a
+// transaction yet -- that's smartEnter's job, about to run next). Resolving
+// that orphan node via posAtDOM doesn't throw -- it silently resolves to
+// something nonsensical (confirmed: position 1, the very start of the
+// block, regardless of where the actual split point was) instead of an
+// error we could catch. Trusting that and resyncing state.selection to
+// match, immediately before smartEnter runs off that same call, was
+// confirmed via a full instrumented trace to be exactly what corrupted the
+// mid-text Enter case: the resync fires, drags state.selection to position
+// 1, and smartEnter then sees a caret at the very start of the block that
+// was never really there.
+//
+// Detected via view.input.lastIOSEnter, prosemirror-view's own internal
+// bookkeeping for exactly this window (not a public API, but a plain
+// object property, guarded defensively in case a future PM version
+// reshapes it -- falls through to the normal resync if so, same as today).
+// Deliberately NOT gated on platform detection (an earlier version checked
+// isTouchPlatform(), i.e. "is this the packaged Capacitor app" -- wrong
+// signal entirely: this is a WebKit *engine* behavior, unrelated to
+// whether Capacitor's native bridge is present, and the earlier check
+// never fired in the very scenario it was meant for).
+const IOS_ENTER_WINDOW_MS = 300;
+
 export function selectionResyncPlugin() {
   return new Plugin({
     props: {
       handleKeyDown(view, event) {
         if (!view.hasFocus()) return false;
-        // iOS handles Enter completely differently from every other key: to
-        // avoid confusing the virtual keyboard, ProseMirror never
-        // preventDefaults it and never calls handleKeyDown on the raw
-        // keydown at all (see prosemirror-view's editHandlers.keydown --
-        // gated on an internal `ios` flag Chromium never sets, which is why
-        // none of this was ever reachable while testing there). Instead it
-        // lets the browser's own native "insertParagraph" DOM mutation
-        // happen first, and only calls handleKeyDown afterward, once its
-        // DOM-mutation observer notices a change shaped like what Enter
-        // produces. By the time THIS handler runs for that call, the live
-        // DOM selection reflects a caret WebKit has already placed relative
-        // to content it just split on its own -- reading that and resyncing
-        // state.selection to match, right here, would feed smartEnter
-        // (keymap.js) a position corrupted by native's own not-yet-modeled
-        // edit, not the real pre-Enter caret this resync exists to recover.
-        // Skipping only this one case keeps the desktop fix this plugin
-        // exists for (see the class comment) fully intact -- that repro
-        // never touched iOS's Enter path at all.
-        if (isTouchPlatform() && event.keyCode === 13) return false;
+        if (event.keyCode === 13) {
+          const lastIOSEnter = view.input?.lastIOSEnter;
+          if (typeof lastIOSEnter === 'number' && lastIOSEnter > 0 && Date.now() - lastIOSEnter < IOS_ENTER_WINDOW_MS) {
+            return false;
+          }
+        }
         const domSel = view.domSelectionRange();
         if (!domSel.focusNode || !view.dom.contains(domSel.focusNode)) return false;
         if (!domSel.anchorNode || !view.dom.contains(domSel.anchorNode)) return false;
