@@ -196,4 +196,94 @@ override the origin. The fixture and browser tests never access script storage.
 After rebuilding/running through Xcode, the user retested on the physical iPad
 and confirmed the issue is resolved: "It's working. It's just working."
 This is the user's visual confirmation of the second patch, in addition to
-the automated DOM/model checks above. Changes remain uncommitted.
+the automated DOM/model checks above. That correction was subsequently committed
+as `5e3c5ed`.
+
+## Typewriter Line follow-up: soft-wrap caret affinity
+
+The user then enabled Typewriter Line mode and reproduced a remaining visual
+failure in `ScreenRecording_09-12-2026 09-19-22_1.MP4`. At about 3.5 seconds
+(tap 2), the highlight remains on the second dialogue line ending in `What was`,
+while the painted caret appears before `her name?` on the next visual line.
+
+The physical iPad trace contains 2,427 events across 25 gestures (24 handled
+taps and one scroll gesture). It is saved locally at
+`/private/tmp/codex-caret-investigation/ipad-typewriter-trace-0912-0919.json`.
+Temporary wrappers, listeners, markers, and the trace badge were removed.
+
+Tap 2, at x=876.5/y=243, correctly hit position 472 inside dialogue block 400.
+PM and DOM both reached 472 after dispatch. A late native selection changed the
+DOM to 401 at +8 ms; the existing guard restored 472 by +9 ms. Both remained at
+472 afterward, and scrollTop remained 764. Taps 1, 5, and 13 similarly settled
+at the first wrapped line's endpoint, 436. Thus the late native overwrite is
+still present and corrected, but a stable logical position alone does not
+guarantee the correct painted caret.
+
+### Reproduction and correction
+
+The isolated fixture reproduced the same painted-caret mismatch with native
+touches in iPad Simulator Safari when Line highlighting was enabled. A soft
+wrap has one logical insertion offset that can paint either at the previous
+line's end or the next line's start (upstream/downstream affinity). Changing
+the highlight was enough to expose this distinction without React or the
+production scrolling code. The precise WebKit internals behind the highlight
+interaction have not been established.
+
+`touchCaretPlugin.js` now retains a seed inside the tapped line for right-margin
+hits at soft-wrap boundaries. After PM's selection/focus update, it collapses
+the native selection to that seed and uses
+[`Selection.modify('move', 'forward', 'lineboundary')`](https://developer.mozilla.org/en-US/docs/Web/API/Selection/modify)
+to restore line-end affinity. The native result must equal the original PM
+target exactly; otherwise it restores the model selection. It repeats this
+step after a late overwrite repair, but not for its own same-position
+selectionchange. Gesture handling and the bounded guard remain unchanged.
+
+Simply subtracting one from the target would change where typing inserts and
+was rejected. The seed is temporary; the final insertion position is preserved.
+
+### Validation and limits
+
+- 21 unit tests passed, including affinity restoration after a late overwrite,
+  avoiding a selectionchange repair loop, and rejecting native navigation that
+  changes the calculated insertion offset.
+- The existing geometry suite still passes 272 cases each in Chromium and
+  WebKit (544 total).
+- Native Simulator validation covered two wrapped lines in each of none,
+  line, paragraph, and underline highlight styles: eight taps, three screenshots
+  per tap. All 16 screenshots in which the blinking caret was visible placed
+  it at the right edge of the tapped line. A subsequent native typing action
+  inserted a character at the exact original model offset.
+- Collapsed DOM Range rectangles are not a sufficient painted-caret oracle:
+  the unpatched fixture reported next-line rectangles even in the no-highlight
+  case where screenshots showed a correct previous-line-end caret. This is why
+  the earlier offset-only native checks missed the remaining issue.
+- `npm run build` and `npx cap sync ios` passed. Updated web assets are ready
+  for Xcode Stop/Run. The user subsequently confirmed every intentional tap
+  landed correctly with Typewriter Line enabled. A couple of residual occurrences
+  while scrolling upward were accepted as usable; no further caret work was requested.
+
+Native experiment scripts, screenshots, and pixel checks are retained under
+`/private/tmp/codex-caret-investigation/`: `native-affinity-options.mjs`,
+`native-affinity-patched.mjs`, `affinity-patched-results.json`, and
+`check-affinity-pixels.py`. They use the storage-free fixture. These scratch
+artifacts are local evidence, not committed regression infrastructure.
+
+## Subsequent editor and layout refinements
+
+- Tab and Shift-Tab now cycle recent character names in opposite directions.
+- Automatic Parentheticals recognizes an empty Character cue immediately after
+  Dialogue, allowing Enter then `(` to add a trailing direction. Enter after
+  Parenthetical still continues as Dialogue; `/C` explicitly selects Character.
+- Parenthetical spacing is shared by the editor and read-only screenplay view.
+  Physical inspection of the 10:35 screenshot case found a real
+  `sp-char` after the parenthetical, but its predecessor still had a 2px bottom
+  margin even though `.sp-paren:has(+ .sp-dial)` no longer matched. Replacing
+  those backward-looking selectors with forward sibling rules preserves 2px
+  between attached speech blocks and 10px before a new character. A WebKit
+  keyboard run of Enter → `/C` → Character → Dialogue verified these gaps in
+  both script views. This spacing fix has not yet had a reported physical retest.
+- The app-wide bottom safe-area padding moved inside the sidebar footer so the
+  app's surfaces extend to the bottom edge while keeping status-bar clearance.
+
+`tests/editorKeyboard.test.mjs` adds ten regression cases for name cycling and
+parenthetical entry. Together with the touch-handler suite, 31 unit tests pass.

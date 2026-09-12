@@ -28,7 +28,7 @@ function selectionAtTouch(view, touch) {
   });
   if (!block) return null;
   const start = block.pos + 1, end = start + block.node.content.size;
-  if (start === end) return TextSelection.create(doc, start);
+  if (start === end) return { selection: TextSelection.create(doc, start) };
 
   // Range rectangles follow actual visual lines, including wrapping and
   // centered/right-aligned text. Move a margin tap just inside that line's
@@ -54,7 +54,35 @@ function selectionAtTouch(view, touch) {
   });
   // Never turn another between-block result into a caret on a different line.
   if (!result || result.pos < start || result.pos > end) return null;
-  return TextSelection.create(doc, result.pos);
+  const selection = TextSelection.create(doc, result.pos);
+  // A margin hit before the block's end is a soft-wrap boundary. Its single
+  // document offset can paint at either the previous line's end or the next
+  // line's start. Keep a seed inside the tapped line to restore that affinity.
+  let lineEndSeed = null;
+  if (x >= line.right && result.pos > start && result.pos < end) {
+    const before = doc.textBetween(Math.max(start, result.pos - 2), result.pos);
+    const surrogatePair = /[\uD800-\uDBFF][\uDC00-\uDFFF]$/.test(before);
+    lineEndSeed = result.pos - (surrogatePair ? 2 : 1);
+  }
+  return { selection, lineEndSeed };
+}
+
+function restoreLineEndAffinity(view, target) {
+  if (target.lineEndSeed == null) return;
+  const live = view.dom.ownerDocument.getSelection();
+  if (!live?.modify) return;
+  try {
+    const seed = view.domAtPos(target.lineEndSeed);
+    live.collapse(seed.node, seed.offset);
+    live.modify('move', 'forward', 'lineboundary');
+    // Native line navigation supplies the visual affinity missing from a PM
+    // TextSelection. It must preserve the computed insertion offset exactly.
+    if (!live.isCollapsed || view.posAtDOM(live.focusNode, live.focusOffset) !== target.selection.head) {
+      view.focus();
+    }
+  } catch {
+    view.focus();
+  }
 }
 
 function moved(touch, start) {
@@ -104,8 +132,9 @@ export function touchCaretPlugin() {
           if (touch.identifier !== start.id || moved(touch, start) ||
               now - start.time > TAP_MAX_MS || view.composing) return false;
           if (event.defaultPrevented || !event.cancelable) return false;
-          const selection = selectionAtTouch(view, touch);
-          if (!selection) return false;
+          const target = selectionAtTouch(view, touch);
+          if (!target) return false;
+          const { selection } = target;
           const lineTop = view.coordsAtPos(selection.head).top;
           const blockStart = selection.$head.start();
           const repeated = lastTap && start.time - lastTap.time < MULTITAP_MS &&
@@ -120,11 +149,12 @@ export function touchCaretPlugin() {
           // compatibility mouse click, and focus through PM's public API
           // (which uses preventScroll and syncs even a stale DOM selection).
           event.preventDefault();
-          pending = { selection, doc: view.state.doc, until: now + SETTLE_MS };
+          pending = { ...target, doc: view.state.doc, until: now + SETTLE_MS };
           if (!selection.eq(view.state.selection)) {
             view.dispatch(view.state.tr.setSelection(selection).setMeta('pointer', true));
           }
           view.focus();
+          restoreLineEndAffinity(view, target);
           return true;
         },
       },
@@ -156,7 +186,10 @@ export function touchCaretPlugin() {
           pending = null;
           return;
         }
-        if (pos !== pending.selection.head) view.focus();
+        if (pos !== pending.selection.head) {
+          view.focus();
+          restoreLineEndAffinity(view, pending);
+        }
       }
 
       // Real iOS touches can place the caret correctly, then restore the

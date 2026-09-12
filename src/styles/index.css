@@ -117,10 +117,10 @@ button {
      an unsupported value is ignored and the next declaration for the same
      property wins. */
   height: 100dvh;
-  /* Requires the viewport-fit=cover meta tag (see index.html) to be
-     non-zero at all -- keeps content clear of the notch/Dynamic Island and
-     home indicator on iOS. A no-op everywhere else (env() falls back to 0). */
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+  /* Keep the status bar and side cutouts clear, but let the app's surfaces
+     reach the bottom edge. Bottom clearance belongs inside the footer,
+     otherwise the shell leaves a blank strip beneath every view. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0
     env(safe-area-inset-left);
   /* Makes this the containing block for the sidebar's overlay positioning
      below 820px (position: absolute; top: 0; bottom: 0) -- without this,
@@ -291,7 +291,10 @@ button {
 .file.active { color: var(--text); background: var(--accent-bg); border-radius: 4px; }
 .file .file-badge { font-size: 9px; color: var(--accent); }
 .file:disabled { color: var(--text-dim); cursor: default; }
-.sidebar-foot { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim); }
+.sidebar-foot {
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border); font-size: 10.5px; color: var(--text-dim);
+}
 
 /* Below tablet width, the sidebar can't share space with the board the way
    it does on desktop (a fixed 250px sidebar leaves almost nothing for a
@@ -524,7 +527,12 @@ button {
 .sp-action { margin-bottom: 12px; color: var(--page-text-secondary); }
 .sp-char { text-align: center; font-weight: 700; margin-bottom: 2px; }
 .sp-dial { max-width: 62%; margin: 0 auto 12px; text-align: left; }
-.sp-paren { text-align: center; font-style: italic; color: var(--page-text-secondary); margin-bottom: 2px; }
+.sp-paren { text-align: center; font-style: italic; color: var(--page-text-secondary); margin-bottom: 10px; }
+/* Keep attached speech blocks 2px apart by offsetting the preceding bottom
+   margin. Use forward sibling selectors: iOS retained a stale :has() style
+   on the previous parenthetical after /C changed its next block's type. */
+.sp-dial + .sp-paren { margin-top: -10px; }
+.sp-paren + .sp-dial { margin-top: -8px; }
 .sp-trans { text-align: right; font-weight: 700; margin-bottom: 12px; }
 /* A full page-width band behind the active line, not just a tint on its own
    (sometimes narrow, sometimes centered -- .sp-dial's `max-width: 62%`)

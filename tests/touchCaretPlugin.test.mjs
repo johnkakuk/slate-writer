@@ -20,6 +20,15 @@ function setup(t) {
     schema.node('dialogue', null, schema.text('Second line.')),
   ]);
   let live = { anchorNode: textNode, focusNode: textNode, anchorOffset: 1, focusOffset: 1 };
+  const nativeSelection = {
+    get focusNode() { return live.focusNode; },
+    get focusOffset() { return live.focusOffset; },
+    get isCollapsed() { return live.anchorNode === live.focusNode && live.anchorOffset === live.focusOffset; },
+    collapse(node, offset) {
+      live = { anchorNode: node, focusNode: node, anchorOffset: offset, focusOffset: offset };
+    },
+  };
+  document.getSelection = () => nativeSelection;
   let focusWrites = 0;
   const view = {
     state: EditorState.create({ doc }),
@@ -32,6 +41,7 @@ function setup(t) {
     posAtCoords: () => ({ pos: 25 }),
     coordsAtPos: () => ({ top: 100, bottom: 115, left: 100, right: 100 }),
     posAtDOM: (_, offset) => offset,
+    domAtPos: pos => ({ node: textNode, offset: pos }),
     domSelectionRange: () => live,
     focus() {
       focusWrites++;
@@ -57,7 +67,7 @@ function setup(t) {
     return event;
   }
   return {
-    view, document, hooks, send,
+    view, document, hooks, send, nativeSelectionAPI: nativeSelection,
     tap() { send('touchstart'); return send('touchend'); },
     nativeSelection(anchor, head = anchor) {
       live = { anchorNode: textNode, focusNode: textNode, anchorOffset: anchor, focusOffset: head };
@@ -198,4 +208,34 @@ test('an out-of-block hit is not converted into a selection in its neighbor', t 
   h.view.posAtCoords = () => ({ pos: 13, inside: -1 });
   assert.equal(h.tap().defaultPrevented, false);
   assert.equal(h.focusWrites, 0);
+});
+
+
+test('a wrapped margin tap restores line-end affinity without changing the insertion offset', t => {
+  const h = setup(t);
+  const moves = [];
+  h.nativeSelectionAPI.modify = function (...args) {
+    moves.push({ args, seed: this.focusOffset });
+    this.collapse(this.focusNode, 25);
+  };
+  h.send('touchstart', { x: 300 });
+  h.send('touchend', { x: 300 });
+  assert.deepEqual(moves, [{ args: ['move', 'forward', 'lineboundary'], seed: 24 }]);
+  assert.equal(h.view.state.selection.head, 25);
+  assert.equal(h.live.focusOffset, 25);
+  h.nativeSelection(14);
+  assert.equal(moves.length, 2);
+  assert.equal(h.live.focusOffset, 25);
+  // Affinity restoration's own selectionchange must not start a repair loop.
+  h.document.dispatchEvent(new Event('selectionchange'));
+  assert.equal(moves.length, 2);
+});
+
+test('native line navigation may not change the calculated insertion offset', t => {
+  const h = setup(t);
+  h.nativeSelectionAPI.modify = function () { this.collapse(this.focusNode, 14); };
+  h.send('touchstart', { x: 300 });
+  h.send('touchend', { x: 300 });
+  assert.equal(h.view.state.selection.head, 25);
+  assert.equal(h.live.focusOffset, 25);
 });

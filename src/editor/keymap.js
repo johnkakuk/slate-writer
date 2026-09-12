@@ -32,7 +32,7 @@ function cycleType(direction) {
 // typing that just isn't recent enough to be in the list. Falls through to
 // the normal type-cycle otherwise -- the slash menu's own Parenthetical/
 // etc. entries are untouched either way.
-function cycleCharacterName(getRecentNames) {
+function cycleCharacterName(getRecentNames, direction = 1) {
   return (state, dispatch) => {
     const { $from } = state.selection;
     const node = $from.parent;
@@ -49,7 +49,11 @@ function cycleCharacterName(getRecentNames) {
     // from there (3rd most recent, 4th, ...), wrapping around to the most
     // recent name last, right before the cycle repeats from 2nd-most-recent
     // again.
-    const nextIdx = currentIdx === -1 ? (names.length > 1 ? 1 : 0) : (currentIdx + 1) % names.length;
+    // Reverse cycling starts with the most recent name on a blank cue,
+    // then follows the same ring backward.
+    const nextIdx = currentIdx === -1
+      ? (direction > 0 && names.length > 1 ? 1 : 0)
+      : (currentIdx + direction + names.length) % names.length;
     const nextName = names[nextIdx];
     if (dispatch) {
       const from = $from.before($from.depth) + 1;
@@ -123,14 +127,16 @@ function smartEnter(state, dispatch) {
 // constraint as this editor's other settings-driven plugins.
 export function editorKeymap(getRecentNames) {
   const nameCycle = cycleCharacterName(getRecentNames);
+  const reverseNameCycle = cycleCharacterName(getRecentNames, -1);
   const typeCycle = cycleType(1);
+  const reverseTypeCycle = cycleType(-1);
   return keymap({
     ...baseKeymap,
     Enter: smartEnter,
     // Cycle through recently-used names on an empty/cycling Character
     // block first, then fall back to the original type-cycle.
     Tab: (state, dispatch) => nameCycle(state, dispatch) || typeCycle(state, dispatch),
-    'Shift-Tab': cycleType(-1),
+    'Shift-Tab': (state, dispatch) => reverseNameCycle(state, dispatch) || reverseTypeCycle(state, dispatch),
     'Mod-z': undo,
     'Shift-Mod-z': redo,
     'Mod-y': redo,
