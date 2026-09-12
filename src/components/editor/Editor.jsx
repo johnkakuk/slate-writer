@@ -147,7 +147,19 @@ export default function Editor() {
 
   function lockScrollAgainstPointer(scrollEl) {
     if (!scrollEl || touchMovedRef.current) return;
-    pointerScrollLockRef.current = scrollEl.scrollTop;
+    // Only capture scrollTop as the baseline on the FIRST pointer-tagged
+    // transaction of a gesture, not every one. A single physical tap can
+    // produce more than one of these -- touchCaretPlugin's own correction,
+    // plus (confirmed via Simulator instrumentation) a late, spurious
+    // native selection re-resolution that briefly lands on the wrong
+    // block. If a re-lock re-captured scrollTop each time, the second call
+    // would "lock in" whatever the native drift had already nudged the
+    // scroll to, instead of the true pre-tap position -- reasserting an
+    // already-wrong value rather than the original. Only the timer refresh
+    // (extending how long the existing baseline is defended) should repeat.
+    if (pointerScrollLockRef.current == null) {
+      pointerScrollLockRef.current = scrollEl.scrollTop;
+    }
     clearTimeout(pointerScrollLockTimerRef.current);
     pointerScrollLockTimerRef.current = setTimeout(() => {
       pointerScrollLockRef.current = null;
